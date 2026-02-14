@@ -9,8 +9,8 @@
 
 ## Supabase
 1. Project created.
-2. `DATABASE_URL` copied.
-3. `SUPABASE_URL`, `SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_ROLE_KEY` copied.
+2. Database connection string copied.
+3. Supabase project URL and API credentials copied.
 4. Storage bucket `resumes` created (public).
 
 ## Google OAuth
@@ -26,15 +26,10 @@
 2. Build command: `npm run build`
 3. Publish directory: `.next`
 4. Environment variables added:
-   - `DATABASE_URL`
-   - `SUPABASE_URL`
-   - `SUPABASE_ANON_KEY`
-   - `SUPABASE_SERVICE_ROLE_KEY`
-   - `NEXT_PUBLIC_SUPABASE_URL`
-   - `GOOGLE_CLIENT_ID`
-   - `GOOGLE_CLIENT_SECRET`
-   - `NEXTAUTH_SECRET`
-   - `NEXTAUTH_URL`
+   - Database connection string
+   - Supabase URL and credentials
+   - OAuth client ID and secret
+   - Auth configuration values
    - `AUTH_TRUST_HOST=true`
    - `APP_MODE=prod`
 5. Deploy.

@@ -104,26 +104,17 @@ Create `/Users/varen/Desktop/JobFlowAI-release/.env`:
 # Launch mode
 APP_MODE=prod
 
-# Auth.js
-NEXTAUTH_SECRET=
-NEXTAUTH_URL=http://localhost:3000
-AUTH_TRUST_HOST=true
+# Authentication and OAuth values
+# (set these in your local .env and Netlify UI)
+AUTH_*=
+OAUTH_*=
 
-# Google OAuth
-GOOGLE_CLIENT_ID=
-GOOGLE_CLIENT_SECRET=
-
-# Supabase
-SUPABASE_URL=
-SUPABASE_ANON_KEY=
-SUPABASE_SERVICE_ROLE_KEY=
-NEXT_PUBLIC_SUPABASE_URL=
-
-# Database
-DATABASE_URL=
+# Storage and database connection values
+STORAGE_*=
+DB_CONNECTION_STRING=
 
 # Admin bootstrap
-ADMIN_EMAIL=varenmehta@gmail.com
+ADMIN_EMAIL=admin@example.com
 
 # Dev bypass
 DEV_BYPASS_AUTH=false
