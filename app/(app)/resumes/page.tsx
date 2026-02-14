@@ -63,7 +63,11 @@ export default function ResumesPage() {
       return;
     }
 
-    const fileUrl = `${process.env.NEXT_PUBLIC_SUPABASE_URL}/storage/v1/object/public/resumes/${data.path}`;
+    const fileUrl = data.publicUrl as string;
+    if (!fileUrl) {
+      setStatus("Upload URL generation failed.");
+      return;
+    }
 
     setStatus("Saving resume...");
     const save = await fetch("/api/resumes", {

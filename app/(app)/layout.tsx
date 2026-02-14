@@ -4,6 +4,8 @@ import "./app-ui.css";
 import { getAuthContext } from "@/lib/auth-context";
 import { redirect } from "next/navigation";
 
+export const dynamic = "force-dynamic";
+
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
   const ctx = await getAuthContext();
 

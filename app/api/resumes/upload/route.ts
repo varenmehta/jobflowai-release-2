@@ -51,5 +51,8 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: error?.message ?? "Upload failed" }, { status: 500 });
   }
 
-  return NextResponse.json(data);
+  const baseUrl = (process.env.SUPABASE_URL ?? "").replace(/\/+$/, "");
+  const publicUrl = `${baseUrl}/storage/v1/object/public/resumes/${uploadPath}`;
+
+  return NextResponse.json({ ...data, path: uploadPath, publicUrl });
 }
