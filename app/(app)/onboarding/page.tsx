@@ -19,6 +19,24 @@ type Resume = { id: string; label: string };
 
 const steps = ["Career", "Profile", "Resume"];
 
+function getErrorMessage(error: unknown) {
+  if (typeof error === "string") return error;
+  if (!error || typeof error !== "object") return "Save failed";
+  const obj = error as Record<string, unknown>;
+  const fieldErrors = obj.fieldErrors;
+  if (fieldErrors && typeof fieldErrors === "object") {
+    for (const value of Object.values(fieldErrors as Record<string, unknown>)) {
+      if (Array.isArray(value) && value.length && typeof value[0] === "string") {
+        return value[0];
+      }
+    }
+  }
+  if (Array.isArray(obj.formErrors) && obj.formErrors.length && typeof obj.formErrors[0] === "string") {
+    return obj.formErrors[0];
+  }
+  return "Save failed";
+}
+
 export default function OnboardingPage() {
   const router = useRouter();
   const [step, setStep] = useState(0);
@@ -70,7 +88,7 @@ export default function OnboardingPage() {
     });
     const data = await res.json();
     if (!res.ok) {
-      setStatus(data.error ?? "Save failed");
+      setStatus(getErrorMessage(data.error));
       return;
     }
     setProfileScore(data.profileScore ?? 0);

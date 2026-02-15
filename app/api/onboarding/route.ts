@@ -3,13 +3,21 @@ import { getAuthContext } from "@/lib/auth-context";
 import { prisma } from "@/lib/db";
 import { z } from "zod";
 
+const optionalUrl = z.preprocess((value) => {
+  if (typeof value !== "string") return value;
+  const trimmed = value.trim();
+  if (!trimmed) return "";
+  if (/^https?:\/\//i.test(trimmed)) return trimmed;
+  return `https://${trimmed}`;
+}, z.string().url().or(z.literal("")));
+
 const onboardingSchema = z.object({
   targetRoles: z.array(z.string().min(1)).max(10).default([]),
   locations: z.array(z.string().min(1)).max(10).default([]),
   salaryMin: z.number().int().nonnegative().optional(),
   salaryMax: z.number().int().nonnegative().optional(),
-  linkedinUrl: z.string().url().optional().or(z.literal("")),
-  portfolioUrl: z.string().url().optional().or(z.literal("")),
+  linkedinUrl: optionalUrl,
+  portfolioUrl: optionalUrl,
   bio: z.string().max(1000).optional(),
   primaryResumeId: z.string().optional(),
   completeSetup: z.boolean().optional(),
@@ -81,7 +89,9 @@ export async function POST(request: Request) {
 
   const body = onboardingSchema.safeParse(await request.json());
   if (!body.success) {
-    return NextResponse.json({ error: body.error.flatten() }, { status: 400 });
+    const firstIssue = body.error.issues[0];
+    const message = firstIssue?.message ?? "Invalid onboarding input";
+    return NextResponse.json({ error: message }, { status: 400 });
   }
 
   if (
