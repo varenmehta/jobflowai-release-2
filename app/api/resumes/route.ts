@@ -36,7 +36,9 @@ export async function POST(request: Request) {
 
   const body = resumeSchema.safeParse(await request.json());
   if (!body.success) {
-    return NextResponse.json({ error: body.error.flatten() }, { status: 400 });
+    const firstIssue = body.error.issues[0];
+    const message = firstIssue?.message ?? "Invalid resume payload";
+    return NextResponse.json({ error: message }, { status: 400 });
   }
 
   const resume = await prisma.resume.create({

@@ -20,6 +20,13 @@ function sanitizeFilename(name: string) {
 }
 
 export async function POST(request: Request) {
+  if (!process.env.SUPABASE_URL || !process.env.SUPABASE_SERVICE_ROLE_KEY) {
+    return NextResponse.json(
+      { error: "Resume upload is not configured on server (missing Supabase environment variables)." },
+      { status: 500 },
+    );
+  }
+
   const { user } = await getAuthContext();
   if (!user) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
@@ -51,8 +58,11 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: error?.message ?? "Upload failed" }, { status: 500 });
   }
 
-  const baseUrl = (process.env.SUPABASE_URL ?? "").replace(/\/+$/, "");
-  const publicUrl = `${baseUrl}/storage/v1/object/public/resumes/${uploadPath}`;
+  const { data: publicData } = supabaseServer.storage.from("resumes").getPublicUrl(uploadPath);
+  const publicUrl = publicData.publicUrl;
+  if (!publicUrl) {
+    return NextResponse.json({ error: "Failed to generate public URL for uploaded file." }, { status: 500 });
+  }
 
   return NextResponse.json({ ...data, path: uploadPath, publicUrl });
 }

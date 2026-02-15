@@ -9,6 +9,24 @@ type Resume = {
   createdAt: string;
 };
 
+function getErrorMessage(error: unknown, fallback = "Upload failed") {
+  if (typeof error === "string" && error.trim()) return error;
+  if (!error || typeof error !== "object") return fallback;
+  const obj = error as Record<string, unknown>;
+  const fieldErrors = obj.fieldErrors;
+  if (fieldErrors && typeof fieldErrors === "object") {
+    for (const value of Object.values(fieldErrors as Record<string, unknown>)) {
+      if (Array.isArray(value) && value.length && typeof value[0] === "string") {
+        return value[0];
+      }
+    }
+  }
+  if (Array.isArray(obj.formErrors) && obj.formErrors.length && typeof obj.formErrors[0] === "string") {
+    return obj.formErrors[0];
+  }
+  return fallback;
+}
+
 export default function ResumesPage() {
   const [status, setStatus] = useState<string>("");
   const [items, setItems] = useState<Resume[]>([]);
@@ -48,7 +66,7 @@ export default function ResumesPage() {
     });
     const data = await res.json();
     if (!res.ok) {
-      setStatus(data.error ?? "Upload failed");
+      setStatus(getErrorMessage(data.error));
       return;
     }
 
@@ -77,7 +95,7 @@ export default function ResumesPage() {
     });
     if (!save.ok) {
       const err = await save.json();
-      setStatus(err.error ?? "Failed to save resume");
+      setStatus(getErrorMessage(err.error, "Failed to save resume"));
       return;
     }
 
