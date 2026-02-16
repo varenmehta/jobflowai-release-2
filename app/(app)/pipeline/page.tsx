@@ -17,7 +17,9 @@ export default async function PipelinePage() {
   return (
     <div>
       <h1 className="section-title">Application Pipeline</h1>
-      <p className="section-subtitle">Drag cards between stages to update status.</p>
+      <p className="section-subtitle">
+        Drag cards between stages with magnetic drop zones. Right-click or long-press any card for AI actions.
+      </p>
       <PipelineClient applications={applications} />
       <button type="button" className="floating-action" aria-label="Quick add">+</button>
     </div>

@@ -97,6 +97,14 @@ export default function Topbar() {
           </div>
         )}
       </div>
+      <button
+        type="button"
+        className="btn btn-secondary btn-sm"
+        onClick={() => window.dispatchEvent(new CustomEvent("jobflow:command-open"))}
+      >
+        Command Bar
+        <span className="badge subtle">⌘K</span>
+      </button>
       <span className="mode-pill">{appModeLabel()}</span>
       <div className="profile-chip">
         <NotificationBell />

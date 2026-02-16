@@ -141,9 +141,36 @@ function formatSalary(salary: { min: number; max: number } | null) {
   return `${min}-${max}`;
 }
 
+function getHiringIntent(signals: JobSignals, isVerified: boolean) {
+  let score = 45;
+  if (isVerified) score += 20;
+  if (signals.postedDays <= 3) score += 15;
+  if (signals.salary) score += 8;
+  if (signals.location === "REMOTE" || signals.location === "HYBRID") score += 6;
+  if (
+    signals.sponsorship.hasH1B ||
+    signals.sponsorship.hasOPT ||
+    signals.sponsorship.hasSTEMOPT ||
+    signals.sponsorship.hasCPT
+  ) {
+    score += 6;
+  }
+  return Math.min(99, Math.max(1, score));
+}
+
+function getGhostRisk(signals: JobSignals, isVerified: boolean) {
+  let risk = 24;
+  if (signals.postedDays > 21) risk += 30;
+  if (signals.postedDays > 35) risk += 18;
+  if (!signals.salary) risk += 12;
+  if (!isVerified) risk += 10;
+  return Math.min(95, Math.max(5, risk));
+}
+
 export default function JobBoardClient({ jobs }: { jobs: Job[] }) {
   const router = useRouter();
   const [message, setMessage] = useState<string>("");
+  const [expandedId, setExpandedId] = useState<string | null>(null);
   const [query, setQuery] = useState("");
   const [verifiedOnly, setVerifiedOnly] = useState(false);
   const [syncing, setSyncing] = useState(false);
@@ -416,7 +443,12 @@ export default function JobBoardClient({ jobs }: { jobs: Job[] }) {
 
       <div className="grid-two">
       {filteredJobs.map(({ job, signals }) => (
-        <div className="card" key={job.id}>
+        <div
+          className={`card elevated-card premium-job-card ${expandedId === job.id ? "expanded" : ""}`}
+          key={job.id}
+          onMouseEnter={() => setExpandedId(job.id)}
+          onMouseLeave={() => setExpandedId((current) => (current === job.id ? null : current))}
+        >
           <h3>{job.title}</h3>
           <p className="kpi-title">{job.company?.name ?? "Unknown"}</p>
           <p className="kpi-title">{job.source ?? "Direct"}</p>
@@ -429,6 +461,12 @@ export default function JobBoardClient({ jobs }: { jobs: Job[] }) {
             </p>
           ) : null}
           <p className="kpi-title">{formatSalary(signals.salary)}</p>
+          <div className="job-signal-row">
+            <span className="badge intent-badge">Hiring Intent {getHiringIntent(signals, job.isVerified)}%</span>
+            <span className={`badge subtle ghost-badge ${getGhostRisk(signals, job.isVerified) > 58 ? "risk" : ""}`}>
+              Ghost Risk {getGhostRisk(signals, job.isVerified)}%
+            </span>
+          </div>
           <div className="job-chip-row">
             {signals.sponsorship.hasH1B && <span className="badge subtle">H1B</span>}
             {signals.sponsorship.hasOPT && <span className="badge subtle">OPT</span>}
@@ -436,6 +474,17 @@ export default function JobBoardClient({ jobs }: { jobs: Job[] }) {
             {signals.sponsorship.hasCPT && <span className="badge subtle">CPT</span>}
             {signals.sponsorship.saysNoSponsorship && <span className="badge subtle">No sponsorship</span>}
           </div>
+          <details className="ai-explain" open={expandedId === job.id}>
+            <summary>AI Match Explanation</summary>
+            <p className="kpi-title">
+              Strong fit due to {signals.location === "REMOTE" ? "remote flexibility" : "location compatibility"},
+              {signals.salary ? " listed compensation transparency," : " role clarity,"} and
+              {signals.experience !== "UNKNOWN" ? ` ${signals.experience.toLowerCase()} level targeting.` : " role-level alignment."}
+            </p>
+            <p className="kpi-title">
+              Resume recommendation: {signals.experience === "SENIOR" || signals.experience === "STAFF" ? "Use leadership-heavy resume variant." : "Use execution-focused resume variant."}
+            </p>
+          </details>
           {job.isVerified && <span className="badge">Verified</span>}
           <div className="form-actions">
             <button type="button" className="btn btn-primary btn-sm" onClick={() => apply(job.id)}>
@@ -452,9 +501,20 @@ export default function JobBoardClient({ jobs }: { jobs: Job[] }) {
       </div>
 
       {!filteredJobs.length && (
-        <div className="card">
+        <div className="card glass-card">
           <h3>No matching roles</h3>
-          <p className="kpi-title">Try clearing filters or checking back later for new partner jobs.</p>
+          <p className="kpi-title">Try clearing filters or run AI-targeted discovery for better fit roles.</p>
+          <div className="list-stack" style={{ marginTop: "10px" }}>
+            <button type="button" className="command-item" onClick={syncJobs}>
+              <span>AI Suggestion: Expand to hybrid roles in top 3 cities</span>
+            </button>
+            <button type="button" className="command-item" onClick={() => setExperienceFilter("ENTRY")}>
+              <span>AI Suggestion: Switch to entry-level + recent postings</span>
+            </button>
+            <button type="button" className="command-item" onClick={() => setSponsorshipFilter("SPONSORSHIP_AVAILABLE")}>
+              <span>AI Suggestion: Filter to sponsorship-friendly companies</span>
+            </button>
+          </div>
         </div>
       )}
       {message && <p className="status-text">{message}</p>}

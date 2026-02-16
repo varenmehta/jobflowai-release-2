@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import Skeleton from "@/components/Skeleton";
 
 type Resume = {
   id: string;
@@ -129,7 +130,11 @@ export default function ResumesPage() {
           </button>
         </div>
         {items.length === 0 ? (
-          <p className="kpi-title">No resumes yet. Upload your first version to unlock resume insights.</p>
+          loading ? (
+            <Skeleton className="skeleton-md" lines={3} />
+          ) : (
+            <p className="kpi-title">No resumes yet. Upload your first version to unlock resume insights.</p>
+          )
         ) : (
           <div className="list-stack">
             {items.map((resume) => (
@@ -143,6 +148,54 @@ export default function ResumesPage() {
             ))}
           </div>
         )}
+      </div>
+
+      <div className="grid-two" style={{ marginTop: "16px" }}>
+        <div className="card elevated-card">
+          <div className="list-row-head">
+            <h3>Performance Heat Map</h3>
+            <span className="badge subtle">Skills x response impact</span>
+          </div>
+          <div className="heat-grid">
+            {[
+              ["System Design", 82],
+              ["Product Thinking", 76],
+              ["React/Next.js", 88],
+              ["Data Fluency", 65],
+              ["Leadership", 71],
+              ["Fintech Domain", 58],
+            ].map(([skill, score]) => (
+              <div key={String(skill)} className="heat-row">
+                <span className="kpi-title">{skill}</span>
+                <div className="heat-track">
+                  <div className="heat-fill" style={{ width: `${score}%` }} />
+                </div>
+                <span className="kpi-title">{score}%</span>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        <div className="card glass-card">
+          <div className="list-row-head">
+            <h3>AI Resume Coach</h3>
+            <span className="badge subtle">Actionable</span>
+          </div>
+          <div className="list-stack">
+            <button type="button" className="command-item" onClick={() => setStatus("Coach: prioritized product-role bullet improvements generated.")}>
+              <span>Improve for product roles</span>
+            </button>
+            <button type="button" className="command-item" onClick={() => setStatus("Coach: fintech-targeted keywords and metrics pack generated.")}>
+              <span>Optimize for fintech</span>
+            </button>
+            <button type="button" className="command-item" onClick={() => setStatus("Coach: ATS score optimization checklist prepared for this role.")}>
+              <span>Increase ATS score for this job</span>
+            </button>
+          </div>
+          <p className="kpi-title" style={{ marginTop: "10px" }}>
+            Tip: keep one resume variant per role cluster and track response rate weekly.
+          </p>
+        </div>
       </div>
     </div>
   );

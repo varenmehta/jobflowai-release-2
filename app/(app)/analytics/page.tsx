@@ -1,10 +1,21 @@
 import { prisma } from "@/lib/db";
 import { getAuthContext } from "@/lib/auth-context";
-import SankeyChart from "@/components/SankeyChart";
 import { ApplicationStatus } from "@prisma/client";
-import SuccessBySourceChart from "@/components/SuccessBySourceChart";
-import TrendLineChart from "@/components/TrendLineChart";
 import { redirect } from "next/navigation";
+import dynamic from "next/dynamic";
+import Skeleton from "@/components/Skeleton";
+
+const SankeyChart = dynamic(() => import("@/components/SankeyChart"), {
+  loading: () => <Skeleton className="skeleton-md" lines={3} />,
+});
+
+const SuccessBySourceChart = dynamic(() => import("@/components/SuccessBySourceChart"), {
+  loading: () => <Skeleton className="skeleton-md" lines={3} />,
+});
+
+const TrendLineChart = dynamic(() => import("@/components/TrendLineChart"), {
+  loading: () => <Skeleton className="skeleton-lg" lines={3} />,
+});
 
 export default async function AnalyticsPage() {
   const { user } = await getAuthContext();

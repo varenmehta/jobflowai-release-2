@@ -1,29 +1,19 @@
+import dynamic from "next/dynamic";
+import Link from "next/link";
+import { redirect } from "next/navigation";
 import { prisma } from "@/lib/db";
 import { getAuthContext } from "@/lib/auth-context";
 import EmailSyncClient from "@/components/EmailSyncClient";
-import { redirect } from "next/navigation";
-import Link from "next/link";
+import Skeleton from "@/components/Skeleton";
 
-const stageOrder = ["APPLIED", "SCREENING", "INTERVIEW", "OFFER"] as const;
-type Stage = (typeof stageOrder)[number];
-type KanbanItem = { id: string; company: string; title: string };
-type KanbanData = Record<Stage, KanbanItem[]>;
+const TrendLineChart = dynamic(() => import("@/components/TrendLineChart"), {
+  loading: () => <Skeleton className="skeleton-lg" lines={3} />,
+});
 
-const stageLabel: Record<Stage, string> = {
-  APPLIED: "Applied",
-  SCREENING: "Screening",
-  INTERVIEW: "Interview",
-  OFFER: "Offer",
-};
-
-const sampleKanban: KanbanData = {
-  APPLIED: [
-    { id: "s1", company: "Figma", title: "Frontend Engineer" },
-    { id: "s2", company: "Datadog", title: "UI Engineer" },
-  ],
-  SCREENING: [{ id: "s3", company: "Vercel", title: "Staff Engineer" }],
-  INTERVIEW: [{ id: "s4", company: "Stripe", title: "Senior Frontend Engineer" }],
-  OFFER: [{ id: "s5", company: "Linear", title: "Frontend Engineer" }],
+type TrendPoint = {
+  label: string;
+  applied: number;
+  interview: number;
 };
 
 export default async function DashboardPage() {
@@ -31,37 +21,51 @@ export default async function DashboardPage() {
   if (!user) redirect("/login?from=/dashboard");
   if (user.status !== "ACTIVE") redirect("/suspended");
   if (!user.onboardingCompleted) redirect("/onboarding");
-  const userId = user.id;
 
-  const [totalApplied, offers, interviews, resumeCount, profile, staleApps, unreadCount, resumes, recentApps] =
-    await Promise.all([
-      prisma.application.count({ where: { userId } }),
-      prisma.application.count({ where: { userId, status: "OFFER" } }),
-      prisma.application.count({ where: { userId, status: "INTERVIEW" } }),
-      prisma.resume.count({ where: { userId } }),
-      prisma.user.findUnique({ where: { id: userId }, select: { profileScore: true } }),
-      prisma.application.count({
-        where: {
-          userId,
-          status: { in: ["APPLIED", "SCREENING"] },
-          updatedAt: { lt: new Date(Date.now() - 1000 * 60 * 60 * 24 * 14) },
-        },
-      }),
-      prisma.notification.count({ where: { userId, read: false } }),
-      prisma.resume.findMany({
-        where: { userId },
-        include: { applications: { select: { status: true } } },
-      }),
-      prisma.application.findMany({
-        where: { userId },
-        include: { job: { include: { company: true } } },
-        orderBy: { updatedAt: "desc" },
-        take: 8,
-      }),
-    ]);
+  const userId = user.id;
+  const [
+    totalApplied,
+    offers,
+    interviews,
+    resumeCount,
+    profile,
+    staleApps,
+    unreadCount,
+    resumes,
+    recentApps,
+    applications,
+  ] = await Promise.all([
+    prisma.application.count({ where: { userId } }),
+    prisma.application.count({ where: { userId, status: "OFFER" } }),
+    prisma.application.count({ where: { userId, status: "INTERVIEW" } }),
+    prisma.resume.count({ where: { userId } }),
+    prisma.user.findUnique({ where: { id: userId }, select: { profileScore: true } }),
+    prisma.application.count({
+      where: {
+        userId,
+        status: { in: ["APPLIED", "SCREENING"] },
+        updatedAt: { lt: new Date(Date.now() - 1000 * 60 * 60 * 24 * 10) },
+      },
+    }),
+    prisma.notification.count({ where: { userId, read: false } }),
+    prisma.resume.findMany({
+      where: { userId },
+      include: { applications: { select: { status: true } } },
+    }),
+    prisma.application.findMany({
+      where: { userId },
+      include: { job: { include: { company: true } } },
+      orderBy: { updatedAt: "desc" },
+      take: 10,
+    }),
+    prisma.application.findMany({
+      where: { userId },
+      select: { createdAt: true, status: true },
+      orderBy: { createdAt: "asc" },
+    }),
+  ]);
 
   const responseRate = totalApplied ? Math.round((interviews / totalApplied) * 100) : 0;
-  const activeCount = totalApplied - offers;
 
   const topResume = resumes
     .map((resume) => {
@@ -74,125 +78,144 @@ export default async function DashboardPage() {
     })
     .sort((a, b) => b.rate - a.rate)[0];
 
-  const kpis = [
-    { title: "Total Applied", value: `${totalApplied}`, note: "All tracked applications" },
-    { title: "Response Rate", value: `${responseRate}%`, note: "Interview or offer outcomes" },
-    { title: "Avg Time to Interview", value: "12d", note: "From application" },
-    { title: "Offers", value: `${offers}`, note: `${activeCount} active` },
-  ];
-
-  const steps = [
-    { done: (profile?.profileScore ?? 0) >= 70, label: "Complete onboarding profile", href: "/onboarding" },
-    { done: resumeCount > 0, label: "Upload at least one resume", href: "/resumes" },
-    { done: totalApplied > 0, label: "Apply to your first role", href: "/jobs" },
-    { done: totalApplied > 2, label: "Start managing your pipeline", href: "/pipeline" },
-  ];
-
-  const grouped: KanbanData = {
-    APPLIED: [],
-    SCREENING: [],
-    INTERVIEW: [],
-    OFFER: [],
+  const stageWeight: Record<string, number> = {
+    APPLIED: 20,
+    SCREENING: 48,
+    INTERVIEW: 78,
+    OFFER: 95,
+    REJECTED: 2,
+    WITHDRAWN: 0,
   };
 
-  for (const application of recentApps) {
-    const stage = application.status as Stage;
-    if (!stageOrder.includes(stage)) continue;
-    if (grouped[stage].length >= 2) continue;
-    grouped[stage].push({
-      id: application.id,
-      company: application.job.company?.name ?? "Company",
-      title: application.job.title,
-    });
-  }
+  const highestProbability = recentApps
+    .map((app) => ({
+      label: `${app.job.company?.name ?? "Company"} — ${app.job.title}`,
+      score: stageWeight[app.status] ?? 20,
+    }))
+    .sort((a, b) => b.score - a.score)[0];
 
-  const hasRealKanban = stageOrder.some((stage) => grouped[stage].length > 0);
-  const kanban: KanbanData = hasRealKanban ? grouped : sampleKanban;
+  const todayFocus = [
+    {
+      title: staleApps > 0 ? "Follow up stale applications" : "No stale applications",
+      detail: staleApps > 0 ? `${staleApps} opportunities need outreach today.` : "Your pipeline is fresh this week.",
+      href: "/pipeline",
+    },
+    {
+      title: resumeCount ? "Tune your best resume" : "Upload your first resume",
+      detail: resumeCount
+        ? `Current best performer: ${topResume?.label ?? "Resume"}`
+        : "Resume variants unlock conversion insights.",
+      href: "/resumes",
+    },
+    {
+      title: unreadCount > 0 ? "Review unread updates" : "Hunt for next role",
+      detail: unreadCount > 0 ? `${unreadCount} updates waiting in your inbox.` : "Add 3 strong jobs to maintain momentum.",
+      href: unreadCount > 0 ? "/dashboard" : "/jobs",
+    },
+  ];
+
+  const now = new Date();
+  const points: TrendPoint[] = Array.from({ length: 6 }, (_, index) => {
+    const from = new Date(now);
+    from.setDate(now.getDate() - (5 - index) * 5);
+    const to = new Date(from);
+    to.setDate(from.getDate() + 4);
+
+    const bucket = applications.filter((app) => app.createdAt >= from && app.createdAt <= to);
+    return {
+      label: `D${index + 1}`,
+      applied: bucket.length,
+      interview: bucket.filter((app) => app.status === "INTERVIEW" || app.status === "OFFER").length,
+    };
+  });
+
+  const insights = [
+    topResume
+      ? `You get stronger outcomes with ${topResume.label}. Current response lift is ${topResume.rate}% across tracked submissions.`
+      : "Upload resume variants to unlock response lift insights by role and source.",
+    highestProbability
+      ? `Highest probability opportunity today is ${highestProbability.label} at an estimated ${highestProbability.score}% interview likelihood.`
+      : "No active opportunities yet. Add jobs to let Copilot rank your best next move.",
+    `Your overall interview response rate is ${responseRate}%. ${responseRate >= 30 ? "Momentum is strong this week." : "Focus on higher-fit roles and follow-up cadence."}`,
+  ];
 
   return (
-    <div className="dashboard-page">
-      <h1 className="section-title">Good morning</h1>
-      <p className="section-subtitle">You have {activeCount} active applications. Here&apos;s your overview.</p>
-
-      <div className="insight-grid">
-        <div className="card highlight insight-card">
-          <h3>Pipeline Health</h3>
-          <p className="kpi-title">{staleApps} applications need attention with no response in 14+ days.</p>
-        </div>
-        <div className="card highlight insight-card">
-          <h3>Top Resume</h3>
-          <p className="kpi-title">
-            {topResume ? `${topResume.label} has a ${topResume.rate}% response rate` : "Upload resumes to see top performance"}
-          </p>
-        </div>
-        <div className="card highlight insight-card">
-          <h3>Inbox Updates</h3>
-          <p className="kpi-title">{unreadCount} unread notifications and status updates.</p>
-        </div>
+    <div className="dashboard-v2">
+      <div className="dashboard-head reveal">
+        <h1 className="section-title">Today Focus</h1>
+        <p className="section-subtitle">Calm execution plan for the next 24 hours.</p>
       </div>
 
-      <div className="kpi-grid">
-        {kpis.map((kpi) => (
-          <div className="card" key={kpi.title}>
-            <div className="kpi-title">{kpi.title}</div>
-            <div className="kpi-value">{kpi.value}</div>
-            <div className="kpi-title">{kpi.note}</div>
-          </div>
-        ))}
-      </div>
-
-      <div className="card">
-        <div className="list-row-head">
-          <h3>Getting Started Checklist</h3>
-          <span className="badge subtle">{steps.filter((step) => step.done).length}/{steps.length} complete</span>
-        </div>
-        <div className="journey-grid">
-          {steps.map((step) => (
-            <Link key={step.label} href={step.href} className={`journey-item ${step.done ? "done" : ""}`}>
-              <div className="journey-dot" aria-hidden />
-              <span>{step.label}</span>
-            </Link>
-          ))}
-        </div>
-      </div>
-
-      <div className="grid-two">
-        <div className="card">
+      <section className="grid-two reveal">
+        <article className="glass-card today-focus-card">
           <div className="list-row-head">
-            <h3>Pipeline Preview</h3>
-            <Link href="/pipeline" className="kpi-title">Open full board</Link>
+            <h3>Priority Actions</h3>
+            <span className="badge subtle">Top 3</span>
           </div>
-          <div className="mini-kanban">
-            {stageOrder.map((stage) => (
-              <div key={stage} className="mini-stage">
-                <div className="mini-stage-head">
-                  <strong>{stageLabel[stage]}</strong>
-                  <span>{kanban[stage].length}</span>
-                </div>
-                <div className="mini-cards">
-                  {kanban[stage].map((item) => (
-                    <article key={item.id} className="mini-card">
-                      <strong>{item.company}</strong>
-                      <span>{item.title}</span>
-                    </article>
-                  ))}
-                </div>
-              </div>
+          <div className="list-stack">
+            {todayFocus.map((item) => (
+              <Link key={item.title} href={item.href} className="focus-item">
+                <strong>{item.title}</strong>
+                <span>{item.detail}</span>
+              </Link>
             ))}
           </div>
-        </div>
-        <div className="card">
-          <h3>Success by Source</h3>
-          <p className="kpi-title">Which channels get the most responses</p>
-          <div className="chart-placeholder" />
-        </div>
-      </div>
+          <div className="focus-risk">
+            <span className="kpi-title">Pipeline risk alert</span>
+            <strong>{staleApps > 0 ? `${staleApps} aging stage alerts` : "No current risk"}</strong>
+          </div>
+        </article>
 
-      <div>
+        <article className="elevated-card probability-card">
+          <h3>Highest Probability Job</h3>
+          <p className="kpi-title">AI-ranked from stage progress and response patterns.</p>
+          <div className="probability-value">{highestProbability?.score ?? 0}%</div>
+          <p className="kpi-title">{highestProbability?.label ?? "No active applications yet"}</p>
+          <div className="form-actions" style={{ marginTop: "12px" }}>
+            <Link href="/pipeline" className="btn btn-primary btn-sm">Open Pipeline</Link>
+            <Link href="/jobs" className="btn btn-secondary btn-sm">Find Better Matches</Link>
+          </div>
+        </article>
+      </section>
+
+      <section className="card reveal" style={{ marginTop: "18px" }}>
+        <div className="list-row-head">
+          <h3>Your Momentum</h3>
+          <span className="kpi-title">Last 30 days signal</span>
+        </div>
+        <TrendLineChart points={points} />
+      </section>
+
+      <section className="card reveal" style={{ marginTop: "18px" }}>
+        <div className="list-row-head">
+          <h3>AI Insights</h3>
+          <span className="badge subtle">Live</span>
+        </div>
+        <div className="ai-insight-stack">
+          {insights.map((insight) => (
+            <p key={insight} className="ai-insight-line">{insight}</p>
+          ))}
+        </div>
+      </section>
+
+      <section className="grid-three reveal" style={{ marginTop: "18px" }}>
+        <article className="card">
+          <div className="kpi-title">Total Applied</div>
+          <div className="kpi-value">{totalApplied}</div>
+        </article>
+        <article className="card">
+          <div className="kpi-title">Interviews</div>
+          <div className="kpi-value">{interviews}</div>
+        </article>
+        <article className="card success-state">
+          <div className="kpi-title">Offers</div>
+          <div className="kpi-value">{offers}</div>
+        </article>
+      </section>
+
+      <section className="reveal" style={{ marginTop: "18px" }}>
         <EmailSyncClient />
-      </div>
-
-      <button type="button" className="floating-action" aria-label="Quick add">+</button>
+      </section>
     </div>
   );
 }

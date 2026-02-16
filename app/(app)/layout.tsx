@@ -1,5 +1,6 @@
 import Sidebar from "@/components/Sidebar";
 import Topbar from "@/components/Topbar";
+import AppExperienceLayer from "@/components/AppExperienceLayer";
 import "./app-ui.css";
 import { getAuthContext } from "@/lib/auth-context";
 import { redirect } from "next/navigation";
@@ -23,6 +24,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
         <Topbar />
         {children}
       </main>
+      <AppExperienceLayer />
     </div>
   );
 }
