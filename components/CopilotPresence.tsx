@@ -3,9 +3,9 @@
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 
-type CopilotState = "idle" | "thinking" | "ready";
+type CopilotState = "idle" | "thinking" | "ready" | "alert";
 
-const stateOrder: CopilotState[] = ["idle", "thinking", "ready"];
+const stateOrder: CopilotState[] = ["idle", "thinking", "ready", "alert"];
 
 export default function CopilotPresence() {
   const router = useRouter();
@@ -82,4 +82,3 @@ export default function CopilotPresence() {
     </>
   );
 }
-

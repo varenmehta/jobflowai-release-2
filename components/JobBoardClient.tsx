@@ -167,11 +167,11 @@ function getGhostRisk(signals: JobSignals, isVerified: boolean) {
   return Math.min(95, Math.max(5, risk));
 }
 
-export default function JobBoardClient({ jobs }: { jobs: Job[] }) {
+export default function JobBoardClient({ jobs, initialQuery = "" }: { jobs: Job[]; initialQuery?: string }) {
   const router = useRouter();
   const [message, setMessage] = useState<string>("");
   const [expandedId, setExpandedId] = useState<string | null>(null);
-  const [query, setQuery] = useState("");
+  const [query, setQuery] = useState(initialQuery);
   const [verifiedOnly, setVerifiedOnly] = useState(false);
   const [syncing, setSyncing] = useState(false);
   const [locationFilter, setLocationFilter] = useState<"ALL" | LocationType>("ALL");
@@ -187,6 +187,7 @@ export default function JobBoardClient({ jobs }: { jobs: Job[] }) {
   const [salaryMinFilter, setSalaryMinFilter] = useState("");
   const [salaryMaxFilter, setSalaryMaxFilter] = useState("");
   const [salaryKnownOnly, setSalaryKnownOnly] = useState(false);
+  const [appliedPulseId, setAppliedPulseId] = useState<string | null>(null);
 
   const jobSources = useMemo(
     () => ["ALL", ...new Set(jobs.map((job) => job.source || "Direct"))],
@@ -289,6 +290,8 @@ export default function JobBoardClient({ jobs }: { jobs: Job[] }) {
     });
     if (res.ok) {
       setMessage("Applied and tracked.");
+      setAppliedPulseId(jobId);
+      window.setTimeout(() => setAppliedPulseId((current) => (current === jobId ? null : current)), 640);
     } else {
       const data = await res.json();
       setMessage(data.error ?? "Apply failed");
@@ -337,114 +340,114 @@ export default function JobBoardClient({ jobs }: { jobs: Job[] }) {
             {syncing ? "Syncing..." : "Sync targeted jobs"}
           </button>
         </div>
-        <div className="job-filters-grid">
-          <select className="select" value={sourceFilter} onChange={(e) => setSourceFilter(e.target.value)}>
-            {jobSources.map((source) => (
-              <option key={source} value={source}>{source === "ALL" ? "All sources" : source}</option>
-            ))}
-          </select>
-          <select className="select" value={locationFilter} onChange={(e) => setLocationFilter(e.target.value as any)}>
-            <option value="ALL">All locations</option>
-            <option value="REMOTE">Remote</option>
-            <option value="HYBRID">Hybrid</option>
-            <option value="ONSITE">Onsite</option>
-            <option value="UNKNOWN">Unknown</option>
-          </select>
-          <select className="select" value={experienceFilter} onChange={(e) => setExperienceFilter(e.target.value as any)}>
-            <option value="ALL">All experience</option>
-            <option value="INTERNSHIP">Internship</option>
-            <option value="ENTRY">Entry level</option>
-            <option value="MID">Mid level</option>
-            <option value="SENIOR">Senior</option>
-            <option value="STAFF">Staff / Principal</option>
-            <option value="MANAGER">Lead / Manager</option>
-            <option value="UNKNOWN">Unknown</option>
-          </select>
-          <select className="select" value={jobTypeFilter} onChange={(e) => setJobTypeFilter(e.target.value as any)}>
-            <option value="ALL">All job types</option>
-            <option value="FULL_TIME">Full time</option>
-            <option value="PART_TIME">Part time</option>
-            <option value="CONTRACT">Contract</option>
-            <option value="INTERNSHIP">Internship</option>
-            <option value="UNKNOWN">Unknown</option>
-          </select>
-          <select className="select" value={postedFilter} onChange={(e) => setPostedFilter(e.target.value as any)}>
-            <option value="ANY">Any posted date</option>
-            <option value="24H">Last 24h</option>
-            <option value="3D">Last 3 days</option>
-            <option value="7D">Last 7 days</option>
-            <option value="14D">Last 14 days</option>
-            <option value="30D">Last 30 days</option>
-          </select>
-          <select className="select" value={sponsorshipFilter} onChange={(e) => setSponsorshipFilter(e.target.value as any)}>
-            <option value="ALL">All sponsorship</option>
-            <option value="SPONSORSHIP_AVAILABLE">Sponsorship available</option>
-            <option value="H1B">H1B</option>
-            <option value="OPT">OPT</option>
-            <option value="STEM_OPT">STEM OPT</option>
-            <option value="CPT">CPT</option>
-            <option value="NO_SPONSORSHIP">No sponsorship</option>
-          </select>
-          <input
-            className="input"
-            placeholder="City"
-            value={cityFilter}
-            onChange={(e) => setCityFilter(e.target.value)}
-          />
-          <input
-            className="input"
-            placeholder="Country"
-            value={countryFilter}
-            onChange={(e) => setCountryFilter(e.target.value)}
-          />
-          <input
-            className="input"
-            placeholder="Min salary (k)"
-            value={salaryMinFilter}
-            onChange={(e) => setSalaryMinFilter(e.target.value.replace(/[^\d]/g, ""))}
-          />
-          <input
-            className="input"
-            placeholder="Max salary (k)"
-            value={salaryMaxFilter}
-            onChange={(e) => setSalaryMaxFilter(e.target.value.replace(/[^\d]/g, ""))}
-          />
-        </div>
-        <div className="form-actions">
-          <button
-            type="button"
-            className={`btn btn-sm ${salaryKnownOnly ? "btn-primary" : "btn-secondary"}`}
-            onClick={() => setSalaryKnownOnly((v) => !v)}
-          >
-            {salaryKnownOnly ? "Salary known only" : "Include unknown salary"}
-          </button>
-          <button
-            type="button"
-            className="btn btn-secondary btn-sm"
-            onClick={() => {
-              setLocationFilter("ALL");
-              setExperienceFilter("ALL");
-              setJobTypeFilter("ALL");
-              setPostedFilter("ANY");
-              setSponsorshipFilter("ALL");
-              setSourceFilter("ALL");
-              setCityFilter("");
-              setCountryFilter("");
-              setSalaryMinFilter("");
-              setSalaryMaxFilter("");
-              setSalaryKnownOnly(false);
-            }}
-          >
-            Reset filters
-          </button>
-          <span className="kpi-title">{filteredJobs.length} jobs match filters</span>
-        </div>
+        <details className="job-filters-collapse">
+          <summary>Refine filters</summary>
+          <div className="job-filters-grid">
+            <select className="select" value={sourceFilter} onChange={(e) => setSourceFilter(e.target.value)}>
+              {jobSources.map((source) => (
+                <option key={source} value={source}>
+                  {source === "ALL" ? "All sources" : source}
+                </option>
+              ))}
+            </select>
+            <select className="select" value={locationFilter} onChange={(e) => setLocationFilter(e.target.value as any)}>
+              <option value="ALL">All locations</option>
+              <option value="REMOTE">Remote</option>
+              <option value="HYBRID">Hybrid</option>
+              <option value="ONSITE">Onsite</option>
+              <option value="UNKNOWN">Unknown</option>
+            </select>
+            <select className="select" value={experienceFilter} onChange={(e) => setExperienceFilter(e.target.value as any)}>
+              <option value="ALL">All experience</option>
+              <option value="INTERNSHIP">Internship</option>
+              <option value="ENTRY">Entry level</option>
+              <option value="MID">Mid level</option>
+              <option value="SENIOR">Senior</option>
+              <option value="STAFF">Staff / Principal</option>
+              <option value="MANAGER">Lead / Manager</option>
+              <option value="UNKNOWN">Unknown</option>
+            </select>
+            <select className="select" value={jobTypeFilter} onChange={(e) => setJobTypeFilter(e.target.value as any)}>
+              <option value="ALL">All job types</option>
+              <option value="FULL_TIME">Full time</option>
+              <option value="PART_TIME">Part time</option>
+              <option value="CONTRACT">Contract</option>
+              <option value="INTERNSHIP">Internship</option>
+              <option value="UNKNOWN">Unknown</option>
+            </select>
+            <select className="select" value={postedFilter} onChange={(e) => setPostedFilter(e.target.value as any)}>
+              <option value="ANY">Any posted date</option>
+              <option value="24H">Last 24h</option>
+              <option value="3D">Last 3 days</option>
+              <option value="7D">Last 7 days</option>
+              <option value="14D">Last 14 days</option>
+              <option value="30D">Last 30 days</option>
+            </select>
+            <select className="select" value={sponsorshipFilter} onChange={(e) => setSponsorshipFilter(e.target.value as any)}>
+              <option value="ALL">All sponsorship</option>
+              <option value="SPONSORSHIP_AVAILABLE">Sponsorship available</option>
+              <option value="H1B">H1B</option>
+              <option value="OPT">OPT</option>
+              <option value="STEM_OPT">STEM OPT</option>
+              <option value="CPT">CPT</option>
+              <option value="NO_SPONSORSHIP">No sponsorship</option>
+            </select>
+            <input className="input" placeholder="City" value={cityFilter} onChange={(e) => setCityFilter(e.target.value)} />
+            <input
+              className="input"
+              placeholder="Country"
+              value={countryFilter}
+              onChange={(e) => setCountryFilter(e.target.value)}
+            />
+            <input
+              className="input"
+              placeholder="Min salary (k)"
+              value={salaryMinFilter}
+              onChange={(e) => setSalaryMinFilter(e.target.value.replace(/[^\d]/g, ""))}
+            />
+            <input
+              className="input"
+              placeholder="Max salary (k)"
+              value={salaryMaxFilter}
+              onChange={(e) => setSalaryMaxFilter(e.target.value.replace(/[^\d]/g, ""))}
+            />
+          </div>
+          <div className="form-actions">
+            <button
+              type="button"
+              className={`btn btn-sm ${salaryKnownOnly ? "btn-primary" : "btn-secondary"}`}
+              onClick={() => setSalaryKnownOnly((v) => !v)}
+            >
+              {salaryKnownOnly ? "Salary known only" : "Include unknown salary"}
+            </button>
+            <button
+              type="button"
+              className="btn btn-secondary btn-sm"
+              onClick={() => {
+                setLocationFilter("ALL");
+                setExperienceFilter("ALL");
+                setJobTypeFilter("ALL");
+                setPostedFilter("ANY");
+                setSponsorshipFilter("ALL");
+                setSourceFilter("ALL");
+                setCityFilter("");
+                setCountryFilter("");
+                setSalaryMinFilter("");
+                setSalaryMaxFilter("");
+                setSalaryKnownOnly(false);
+              }}
+            >
+              Reset filters
+            </button>
+          </div>
+        </details>
+        <p className="kpi-title" style={{ marginTop: "8px" }}>{filteredJobs.length} jobs match filters</p>
       </div>
 
-      <div className="grid-two">
+      <div className="job-masonry">
       {filteredJobs.map(({ job, signals }) => (
         <div
-          className={`card elevated-card premium-job-card ${expandedId === job.id ? "expanded" : ""}`}
+          className={`card elevated-card premium-job-card ${expandedId === job.id ? "expanded" : ""} ${appliedPulseId === job.id ? "apply-pulse" : ""}`}
           key={job.id}
           onMouseEnter={() => setExpandedId(job.id)}
           onMouseLeave={() => setExpandedId((current) => (current === job.id ? null : current))}
@@ -461,6 +464,12 @@ export default function JobBoardClient({ jobs }: { jobs: Job[] }) {
             </p>
           ) : null}
           <p className="kpi-title">{formatSalary(signals.salary)}</p>
+          <div className="timeline-micro" aria-hidden>
+            <div className="timeline-track">
+              <div className="timeline-fill" style={{ width: `${Math.max(8, 100 - Math.min(95, signals.postedDays * 3))}%` }} />
+            </div>
+            <small>{signals.postedDays}d freshness window</small>
+          </div>
           <div className="job-signal-row">
             <span className="badge intent-badge">Hiring Intent {getHiringIntent(signals, job.isVerified)}%</span>
             <span className={`badge subtle ghost-badge ${getGhostRisk(signals, job.isVerified) > 58 ? "risk" : ""}`}>

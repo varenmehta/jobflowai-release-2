@@ -3,7 +3,7 @@ import { designTokens } from "@/lib/design/tokens";
 export const pageFadeIn = {
   initial: { opacity: 0, y: 16 },
   animate: { opacity: 1, y: 0 },
-  transition: { duration: designTokens.motion.medium / 1000, ease: designTokens.easing.settle },
+  transition: { duration: designTokens.motion.slow / 1000, ease: designTokens.easing.settle },
 };
 
 export const staggerListReveal = {
@@ -19,7 +19,7 @@ export const staggerListReveal = {
     animate: {
       opacity: 1,
       y: 0,
-      transition: { duration: designTokens.motion.base / 1000, ease: designTokens.easing.smooth },
+      transition: { duration: designTokens.motion.normal / 1000, ease: designTokens.easing.smooth },
     },
   },
 };
@@ -65,4 +65,3 @@ export const subtleParallaxScroll = {
   translateY: [0, -6],
   transition: { duration: designTokens.motion.hero / 1000, ease: designTokens.easing.smooth },
 };
-

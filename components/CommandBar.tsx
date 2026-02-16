@@ -44,9 +44,18 @@ export default function CommandBar() {
 
   const items: CommandItem[] = useMemo(
     () => [
-      { id: "job", label: "Jump to job board", hint: "Open jobs", run: () => router.push("/jobs") },
+      { id: "job", label: "Search jobs", hint: "Open jobs board", run: () => router.push("/jobs") },
       { id: "pipeline", label: "Jump to application pipeline", hint: "Open pipeline", run: () => router.push("/pipeline") },
-      { id: "add-job", label: "Add new job", hint: "Post or import role", run: () => router.push("/jobs") },
+      { id: "add-job", label: "Add job manually", hint: "Open job intake", run: () => router.push("/jobs") },
+      {
+        id: "generate-resume",
+        label: "Generate resume draft",
+        hint: "Open AI Resume Coach",
+        run: () => {
+          router.push("/resumes");
+          window.dispatchEvent(new CustomEvent("jobflow:resume-generate"));
+        },
+      },
       {
         id: "copilot",
         label: "Ask Copilot",
@@ -63,7 +72,20 @@ export default function CommandBar() {
     [router],
   );
 
-  const filtered = items.filter((item) => {
+  const dynamicItems = useMemo(() => {
+    const term = query.trim();
+    if (!term) return [];
+    return [
+      {
+        id: "search-term",
+        label: `Search jobs for "${term}"`,
+        hint: "Run focused job search",
+        run: () => router.push(`/jobs?q=${encodeURIComponent(term)}`),
+      },
+    ] as CommandItem[];
+  }, [query, router]);
+
+  const filtered = [...dynamicItems, ...items].filter((item) => {
     const term = query.trim().toLowerCase();
     if (!term) return true;
     return item.label.toLowerCase().includes(term) || item.hint.toLowerCase().includes(term);
@@ -94,6 +116,9 @@ export default function CommandBar() {
             placeholder="Jump to job, application, copilot actions..."
             value={query}
             onChange={(event) => setQuery(event.target.value)}
+            onKeyDown={(event) => {
+              if (event.key === "Enter" && filtered.length) runItem(filtered[0]);
+            }}
           />
           <button type="button" className="btn btn-secondary btn-sm" onClick={toggleSound}>
             Sound {soundEnabled ? "ON" : "OFF"}

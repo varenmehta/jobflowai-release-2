@@ -39,6 +39,8 @@ export default function PipelineClient({ applications }: { applications: Applica
   const [hoverStage, setHoverStage] = useState<string | null>(null);
   const [menu, setMenu] = useState<MenuState>(null);
   const [confetti, setConfetti] = useState(false);
+  const [checkBurst, setCheckBurst] = useState(false);
+  const [dropStage, setDropStage] = useState<string | null>(null);
   const longPressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const stageCounts = useMemo(
@@ -52,12 +54,19 @@ export default function PipelineClient({ applications }: { applications: Applica
 
   const handleDrop = async (id: string, status: string) => {
     setHoverStage(null);
+    setDropStage(status);
+    window.setTimeout(() => setDropStage((current) => (current === status ? null : current)), 420);
     await updateStatus(id, status);
   };
 
   const triggerConfetti = () => {
     setConfetti(true);
     window.setTimeout(() => setConfetti(false), 900);
+  };
+
+  const triggerCheckBurst = () => {
+    setCheckBurst(true);
+    window.setTimeout(() => setCheckBurst(false), 520);
   };
 
   const updateStatus = async (id: string, status: string) => {
@@ -70,6 +79,7 @@ export default function PipelineClient({ applications }: { applications: Applica
     if (res.ok) {
       setItems((prev) => prev.map((item) => (item.id === id ? { ...item, status } : item)));
       setMessage("Stage updated.");
+      if (status === "INTERVIEW") triggerCheckBurst();
       if (status === "INTERVIEW" || status === "OFFER") triggerConfetti();
     } else {
       const data = await res.json();
@@ -97,10 +107,11 @@ export default function PipelineClient({ applications }: { applications: Applica
   return (
     <>
       {confetti ? <div className="confetti-burst" aria-hidden /> : null}
+      {checkBurst ? <div className="check-burst" aria-hidden>✓</div> : null}
       <div className="pipeline-grid pipeline-premium">
         {stageMeta.map((stage) => (
           <div
-            className={`stage drop-zone magnetic-zone ${hoverStage === stage.key ? "active-glow" : ""}`}
+            className={`stage drop-zone magnetic-zone stage-${stage.key} ${hoverStage === stage.key ? "active-glow" : ""} ${dropStage === stage.key ? "drop-velocity" : ""}`}
             key={stage.key}
             onDragOver={(event) => {
               event.preventDefault();

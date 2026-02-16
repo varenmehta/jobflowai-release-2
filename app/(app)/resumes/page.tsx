@@ -32,6 +32,11 @@ export default function ResumesPage() {
   const [status, setStatus] = useState<string>("");
   const [items, setItems] = useState<Resume[]>([]);
   const [loading, setLoading] = useState(true);
+  const [activeSkill, setActiveSkill] = useState<{ name: string; score: number } | null>(null);
+  const [coachFeed, setCoachFeed] = useState<string[]>([
+    "Scanning resume signals...",
+    "Aligning role clusters with response history...",
+  ]);
 
   const load = async () => {
     setLoading(true);
@@ -47,6 +52,30 @@ export default function ResumesPage() {
 
   useEffect(() => {
     load();
+  }, []);
+
+  useEffect(() => {
+    const handler = () => setStatus("AI Coach: generating new resume draft from your strongest signal set...");
+    window.addEventListener("jobflow:resume-generate", handler);
+    return () => window.removeEventListener("jobflow:resume-generate", handler);
+  }, []);
+
+  useEffect(() => {
+    const lines = [
+      "Suggestion: Move measurable outcomes into first 2 bullets for recruiter scan speed.",
+      "Suggestion: For product roles, emphasize cross-functional launch ownership.",
+      "Suggestion: Add one quantified fintech case line for higher domain confidence.",
+      "Suggestion: Keep ATS keyword density between 2% and 3% for priority terms.",
+    ];
+    let index = 0;
+    const timer = window.setInterval(() => {
+      setCoachFeed((prev) => {
+        const next = [...prev, lines[index % lines.length]];
+        return next.slice(-4);
+      });
+      index += 1;
+    }, 2600);
+    return () => window.clearInterval(timer);
   }, []);
 
   const handleUpload = async (event: React.FormEvent<HTMLFormElement>) => {
@@ -165,7 +194,12 @@ export default function ResumesPage() {
               ["Leadership", 71],
               ["Fintech Domain", 58],
             ].map(([skill, score]) => (
-              <div key={String(skill)} className="heat-row">
+              <div
+                key={String(skill)}
+                className={`heat-row ${activeSkill?.name === String(skill) ? "active" : ""}`}
+                onMouseEnter={() => setActiveSkill({ name: String(skill), score: Number(score) })}
+                onMouseLeave={() => setActiveSkill((current) => (current?.name === String(skill) ? null : current))}
+              >
                 <span className="kpi-title">{skill}</span>
                 <div className="heat-track">
                   <div className="heat-fill" style={{ width: `${score}%` }} />
@@ -174,6 +208,11 @@ export default function ResumesPage() {
               </div>
             ))}
           </div>
+          <p className="kpi-title" style={{ marginTop: "10px" }}>
+            {activeSkill
+              ? `${activeSkill.name} currently contributes an estimated ${activeSkill.score}% response impact.`
+              : "Hover a skill to inspect response impact."}
+          </p>
         </div>
 
         <div className="card glass-card">
@@ -191,6 +230,11 @@ export default function ResumesPage() {
             <button type="button" className="command-item" onClick={() => setStatus("Coach: ATS score optimization checklist prepared for this role.")}>
               <span>Increase ATS score for this job</span>
             </button>
+          </div>
+          <div className="ai-stream-panel">
+            {coachFeed.map((line) => (
+              <p key={line} className="kpi-title ai-stream-line">{line}</p>
+            ))}
           </div>
           <p className="kpi-title" style={{ marginTop: "10px" }}>
             Tip: keep one resume variant per role cluster and track response rate weekly.

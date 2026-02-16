@@ -13,11 +13,10 @@ export const spacing = {
 } as const;
 
 export const motion = {
-  instant: 80,
-  fast: 140,
-  base: 220,
-  medium: 320,
-  hero: 520,
+  fast: 120,
+  normal: 220,
+  slow: 340,
+  hero: 500,
 } as const;
 
 export const depth = {
@@ -57,4 +56,3 @@ export const designTokens = {
   easing,
   color,
 } as const;
-

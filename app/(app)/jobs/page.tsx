@@ -1,7 +1,11 @@
 import { prisma } from "@/lib/db";
 import JobBoardClient from "@/components/JobBoardClient";
 
-export default async function JobsPage() {
+export default async function JobsPage({
+  searchParams,
+}: {
+  searchParams?: { q?: string };
+}) {
   const jobs = await prisma.job.findMany({
     include: { company: true },
     orderBy: { createdAt: "desc" },
@@ -14,7 +18,7 @@ export default async function JobsPage() {
       <p className="section-subtitle">
         Pull targeted jobs from multiple sources and curated company pages, then apply in one place.
       </p>
-      <JobBoardClient jobs={jobs} />
+      <JobBoardClient jobs={jobs} initialQuery={searchParams?.q ?? ""} />
     </div>
   );
 }

@@ -5,6 +5,7 @@ import { prisma } from "@/lib/db";
 import { getAuthContext } from "@/lib/auth-context";
 import EmailSyncClient from "@/components/EmailSyncClient";
 import Skeleton from "@/components/Skeleton";
+import ProgressiveReveal from "@/components/ProgressiveReveal";
 
 const TrendLineChart = dynamic(() => import("@/components/TrendLineChart"), {
   loading: () => <Skeleton className="skeleton-lg" lines={3} />,
@@ -142,80 +143,83 @@ export default async function DashboardPage() {
   return (
     <div className="dashboard-v2">
       <div className="dashboard-head reveal">
-        <h1 className="section-title">Today Focus</h1>
-        <p className="section-subtitle">Calm execution plan for the next 24 hours.</p>
+        <h1 className="section-title">Today Execution Panel</h1>
+        <p className="section-subtitle">A calm, high-signal operating view for the next 24 hours.</p>
       </div>
 
-      <section className="grid-two reveal">
-        <article className="glass-card today-focus-card">
-          <div className="list-row-head">
-            <h3>Priority Actions</h3>
-            <span className="badge subtle">Top 3</span>
-          </div>
-          <div className="list-stack">
-            {todayFocus.map((item) => (
-              <Link key={item.title} href={item.href} className="focus-item">
-                <strong>{item.title}</strong>
-                <span>{item.detail}</span>
+      <ProgressiveReveal>
+        <section className="grid-two">
+          <article className="glass-card today-focus-card">
+            <div className="list-row-head">
+              <h3>3 Next Best Actions</h3>
+              <span className="badge subtle">Priority</span>
+            </div>
+            <div className="list-stack">
+              {todayFocus.map((item) => (
+                <Link key={item.title} href={item.href} className="focus-item">
+                  <strong>{item.title}</strong>
+                  <span>{item.detail}</span>
+                </Link>
+              ))}
+            </div>
+            <div className="focus-risk">
+              <span className="kpi-title">Pipeline risk alert</span>
+              <strong>{staleApps > 0 ? `${staleApps} aging stage alerts` : "No current risk"}</strong>
+            </div>
+          </article>
+
+          <article className="elevated-card probability-card">
+            <h3>Highest Probability Job</h3>
+            <p className="kpi-title">AI-ranked from stage progress, recency, and response pattern.</p>
+            <div className="probability-value">{highestProbability?.score ?? 0}%</div>
+            <p className="kpi-title">{highestProbability?.label ?? "No active applications yet"}</p>
+            <div className="form-actions" style={{ marginTop: "12px" }}>
+              <Link href="/pipeline" className="btn btn-primary btn-sm">
+                Open Pipeline
               </Link>
+              <Link href="/jobs" className="btn btn-secondary btn-sm">
+                Find Better Matches
+              </Link>
+            </div>
+          </article>
+        </section>
+      </ProgressiveReveal>
+
+      <ProgressiveReveal>
+        <section className="card" style={{ marginTop: "18px" }}>
+          <div className="list-row-head">
+            <h3>Your Momentum</h3>
+            <span className="kpi-title">Last 30 days</span>
+          </div>
+          <TrendLineChart points={points} />
+        </section>
+      </ProgressiveReveal>
+
+      <ProgressiveReveal>
+        <section className="card" style={{ marginTop: "18px" }}>
+          <div className="list-row-head">
+            <h3>AI Insights</h3>
+            <span className="badge subtle">Text-first</span>
+          </div>
+          <div className="ai-insight-stack">
+            {insights.map((insight) => (
+              <p key={insight} className="ai-insight-line">
+                {insight}
+              </p>
             ))}
           </div>
-          <div className="focus-risk">
-            <span className="kpi-title">Pipeline risk alert</span>
-            <strong>{staleApps > 0 ? `${staleApps} aging stage alerts` : "No current risk"}</strong>
-          </div>
-        </article>
+          <p className="kpi-title" style={{ marginTop: "12px" }}>
+            Snapshot: {totalApplied} applied, {interviews} interviews, {offers} offers, profile score{" "}
+            {profile?.profileScore ?? "N/A"}.
+          </p>
+        </section>
+      </ProgressiveReveal>
 
-        <article className="elevated-card probability-card">
-          <h3>Highest Probability Job</h3>
-          <p className="kpi-title">AI-ranked from stage progress and response patterns.</p>
-          <div className="probability-value">{highestProbability?.score ?? 0}%</div>
-          <p className="kpi-title">{highestProbability?.label ?? "No active applications yet"}</p>
-          <div className="form-actions" style={{ marginTop: "12px" }}>
-            <Link href="/pipeline" className="btn btn-primary btn-sm">Open Pipeline</Link>
-            <Link href="/jobs" className="btn btn-secondary btn-sm">Find Better Matches</Link>
-          </div>
-        </article>
-      </section>
-
-      <section className="card reveal" style={{ marginTop: "18px" }}>
-        <div className="list-row-head">
-          <h3>Your Momentum</h3>
-          <span className="kpi-title">Last 30 days signal</span>
-        </div>
-        <TrendLineChart points={points} />
-      </section>
-
-      <section className="card reveal" style={{ marginTop: "18px" }}>
-        <div className="list-row-head">
-          <h3>AI Insights</h3>
-          <span className="badge subtle">Live</span>
-        </div>
-        <div className="ai-insight-stack">
-          {insights.map((insight) => (
-            <p key={insight} className="ai-insight-line">{insight}</p>
-          ))}
-        </div>
-      </section>
-
-      <section className="grid-three reveal" style={{ marginTop: "18px" }}>
-        <article className="card">
-          <div className="kpi-title">Total Applied</div>
-          <div className="kpi-value">{totalApplied}</div>
-        </article>
-        <article className="card">
-          <div className="kpi-title">Interviews</div>
-          <div className="kpi-value">{interviews}</div>
-        </article>
-        <article className="card success-state">
-          <div className="kpi-title">Offers</div>
-          <div className="kpi-value">{offers}</div>
-        </article>
-      </section>
-
-      <section className="reveal" style={{ marginTop: "18px" }}>
-        <EmailSyncClient />
-      </section>
+      <ProgressiveReveal>
+        <section style={{ marginTop: "18px" }}>
+          <EmailSyncClient />
+        </section>
+      </ProgressiveReveal>
     </div>
   );
 }
