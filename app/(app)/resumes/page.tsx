@@ -88,11 +88,12 @@ export default function ResumesPage() {
       return;
     }
 
-    setStatus("Requesting upload URL...");
+    setStatus("Uploading...");
+    const uploadForm = new FormData();
+    uploadForm.append("file", file);
     const res = await fetch("/api/resumes/upload", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ filename: file.name, contentType: file.type || "application/pdf" }),
+      body: uploadForm,
     });
     const data = await res.json();
     if (!res.ok) {
@@ -100,20 +101,9 @@ export default function ResumesPage() {
       return;
     }
 
-    setStatus("Uploading...");
-    const upload = await fetch(data.signedUrl, {
-      method: "PUT",
-      headers: { "Content-Type": file.type || "application/pdf" },
-      body: file,
-    });
-    if (!upload.ok) {
-      setStatus("File upload failed.");
-      return;
-    }
-
     const fileUrl = data.publicUrl as string;
     if (!fileUrl) {
-      setStatus("Upload URL generation failed.");
+      setStatus("File upload failed.");
       return;
     }
 

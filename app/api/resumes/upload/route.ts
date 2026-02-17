@@ -12,6 +12,7 @@ const ALLOWED_CONTENT_TYPES = new Set([
   "application/pdf",
   "application/msword",
   "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+  "application/octet-stream",
 ]);
 
 function sanitizeFilename(name: string) {
@@ -35,7 +36,51 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Account suspended" }, { status: 403 });
   }
 
-  const body = schema.safeParse(await request.json());
+  const contentTypeHeader = request.headers.get("content-type") ?? "";
+
+  if (contentTypeHeader.includes("multipart/form-data")) {
+    const form = await request.formData();
+    const file = form.get("file");
+    if (!(file instanceof File)) {
+      return NextResponse.json({ error: "Missing file" }, { status: 400 });
+    }
+
+    const safeFilename = sanitizeFilename(file.name);
+    if (!safeFilename) {
+      return NextResponse.json({ error: "Invalid filename" }, { status: 400 });
+    }
+
+    const fileType = file.type || "application/octet-stream";
+    if (!ALLOWED_CONTENT_TYPES.has(fileType)) {
+      return NextResponse.json({ error: "Unsupported file type" }, { status: 400 });
+    }
+
+    const maxBytes = 8 * 1024 * 1024;
+    if (file.size > maxBytes) {
+      return NextResponse.json({ error: "File too large (max 8MB)." }, { status: 400 });
+    }
+
+    const uploadPath = `${user.id}/${Date.now()}-${safeFilename}`;
+    const fileBuffer = await file.arrayBuffer();
+    const { error: uploadError } = await supabaseServer.storage.from("resumes").upload(uploadPath, fileBuffer, {
+      contentType: fileType,
+      upsert: false,
+    });
+
+    if (uploadError) {
+      return NextResponse.json({ error: uploadError.message ?? "Upload failed" }, { status: 500 });
+    }
+
+    const { data: publicData } = supabaseServer.storage.from("resumes").getPublicUrl(uploadPath);
+    const publicUrl = publicData.publicUrl;
+    if (!publicUrl) {
+      return NextResponse.json({ error: "Failed to generate public URL for uploaded file." }, { status: 500 });
+    }
+
+    return NextResponse.json({ path: uploadPath, publicUrl });
+  }
+
+  const body = schema.safeParse(await request.json().catch(() => ({})));
   if (!body.success) {
     return NextResponse.json({ error: body.error.flatten() }, { status: 400 });
   }

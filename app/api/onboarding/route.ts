@@ -16,11 +16,11 @@ const onboardingSchema = z.object({
   locations: z.array(z.string().min(1)).max(10).default([]),
   salaryMin: z.number().int().nonnegative().optional(),
   salaryMax: z.number().int().nonnegative().optional(),
-  linkedinUrl: optionalUrl,
-  portfolioUrl: optionalUrl,
-  bio: z.string().max(1000).optional(),
-  primaryResumeId: z.string().optional(),
-  completeSetup: z.boolean().optional(),
+  linkedinUrl: optionalUrl.default(""),
+  portfolioUrl: optionalUrl.default(""),
+  bio: z.string().max(1000).default(""),
+  primaryResumeId: z.string().default(""),
+  completeSetup: z.boolean().default(false),
 });
 
 function toPrefs(raw: unknown) {
@@ -87,7 +87,8 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Account suspended" }, { status: 403 });
   }
 
-  const body = onboardingSchema.safeParse(await request.json());
+  const payloadRaw = await request.json().catch(() => ({}));
+  const body = onboardingSchema.safeParse(payloadRaw);
   if (!body.success) {
     const firstIssue = body.error.issues[0];
     const message = firstIssue?.message ?? "Invalid onboarding input";

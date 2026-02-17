@@ -77,8 +77,12 @@ export default function OnboardingPage() {
       ...form,
       targetRoles: (form.targetRoles ?? []).filter(Boolean),
       locations: (form.locations ?? []).filter(Boolean),
-      salaryMin: form.salaryMin ? Number(form.salaryMin) : undefined,
-      salaryMax: form.salaryMax ? Number(form.salaryMax) : undefined,
+      salaryMin: form.salaryMin !== undefined ? Number(form.salaryMin) : undefined,
+      salaryMax: form.salaryMax !== undefined ? Number(form.salaryMax) : undefined,
+      linkedinUrl: (form.linkedinUrl ?? "").trim(),
+      portfolioUrl: (form.portfolioUrl ?? "").trim(),
+      bio: (form.bio ?? "").trim(),
+      primaryResumeId: form.primaryResumeId ?? "",
       completeSetup,
     };
     const res = await fetch("/api/onboarding", {
