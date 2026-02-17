@@ -3,75 +3,69 @@ import { getAuthContext } from "@/lib/auth-context";
 import { prisma } from "@/lib/db";
 import { z } from "zod";
 
-const optionalUrl = z.preprocess((value) => {
-  if (typeof value !== "string") return value;
-  const trimmed = value.trim();
-  if (!trimmed) return "";
-  if (/^https?:\/\//i.test(trimmed)) return trimmed;
-  return `https://${trimmed}`;
-}, z.string().url().or(z.literal("")));
-
 const onboardingSchema = z.object({
-  targetRoles: z.array(z.string().min(1)).max(10).default([]),
-  locations: z.array(z.string().min(1)).max(10).default([]),
-  salaryMin: z.number().int().nonnegative().optional(),
-  salaryMax: z.number().int().nonnegative().optional(),
-  linkedinUrl: optionalUrl.default(""),
-  portfolioUrl: optionalUrl.default(""),
-  bio: z.string().max(1000).default(""),
+  firstName: z.string().trim().max(80).default(""),
+  lastName: z.string().trim().max(80).default(""),
+  email: z.string().trim().email().or(z.literal("")).default(""),
+  dateOfBirth: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).or(z.literal("")).default(""),
   primaryResumeId: z.string().default(""),
   completeSetup: z.boolean().default(false),
 });
 
+function splitName(name: string | null) {
+  const raw = (name ?? "").trim();
+  if (!raw) return { firstName: "", lastName: "" };
+  const parts = raw.split(/\s+/).filter(Boolean);
+  if (parts.length === 1) return { firstName: parts[0], lastName: "" };
+  return { firstName: parts[0], lastName: parts.slice(1).join(" ") };
+}
+
 function toPrefs(raw: unknown) {
   const base = typeof raw === "object" && raw ? (raw as Record<string, unknown>) : {};
   return {
-    targetRoles: Array.isArray(base.targetRoles) ? base.targetRoles.map(String) : [],
-    locations: Array.isArray(base.locations) ? base.locations.map(String) : [],
-    salaryMin: typeof base.salaryMin === "number" ? base.salaryMin : undefined,
-    salaryMax: typeof base.salaryMax === "number" ? base.salaryMax : undefined,
-    linkedinUrl: typeof base.linkedinUrl === "string" ? base.linkedinUrl : "",
-    portfolioUrl: typeof base.portfolioUrl === "string" ? base.portfolioUrl : "",
-    bio: typeof base.bio === "string" ? base.bio : "",
+    firstName: typeof base.firstName === "string" ? base.firstName : "",
+    lastName: typeof base.lastName === "string" ? base.lastName : "",
+    email: typeof base.email === "string" ? base.email : "",
+    dateOfBirth: typeof base.dateOfBirth === "string" ? base.dateOfBirth : "",
     primaryResumeId: typeof base.primaryResumeId === "string" ? base.primaryResumeId : "",
     onboardingCompleted: base.onboardingCompleted === true,
-    onboardingCompletedAt:
-      typeof base.onboardingCompletedAt === "string" ? base.onboardingCompletedAt : "",
+    onboardingCompletedAt: typeof base.onboardingCompletedAt === "string" ? base.onboardingCompletedAt : "",
   };
 }
 
 function computeProfileScore(input: ReturnType<typeof toPrefs>, resumeCount: number) {
   let score = 0;
-  if (input.targetRoles.length > 0) score += 20;
-  if (input.locations.length > 0) score += 15;
-  if (input.salaryMin && input.salaryMax && input.salaryMax >= input.salaryMin) score += 15;
-  if (input.linkedinUrl) score += 15;
-  if (input.portfolioUrl) score += 10;
-  if (input.bio && input.bio.trim().length >= 30) score += 10;
-  if (resumeCount > 0) score += 15;
+  if (input.firstName) score += 20;
+  if (input.lastName) score += 20;
+  if (input.email) score += 20;
+  if (input.dateOfBirth) score += 20;
+  if (resumeCount > 0) score += 20;
   return Math.min(100, score);
 }
 
 export async function GET() {
   const { user } = await getAuthContext();
-  if (!user) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
-  if (user.status !== "ACTIVE") {
-    return NextResponse.json({ error: "Account suspended" }, { status: 403 });
-  }
+  if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  if (user.status !== "ACTIVE") return NextResponse.json({ error: "Account suspended" }, { status: 403 });
 
   const [userRecord, resumeCount] = await Promise.all([
     prisma.user.findUnique({
       where: { id: user.id },
-      select: { preferences: true, profileScore: true },
+      select: { email: true, name: true, preferences: true, profileScore: true },
     }),
     prisma.resume.count({ where: { userId: user.id } }),
   ]);
 
   const prefs = toPrefs(userRecord?.preferences);
+  const split = splitName(userRecord?.name ?? null);
+
   return NextResponse.json({
-    onboarding: prefs,
+    onboarding: {
+      ...prefs,
+      firstName: prefs.firstName || split.firstName,
+      lastName: prefs.lastName || split.lastName,
+      email: prefs.email || userRecord?.email || "",
+    },
     profileScore: userRecord?.profileScore ?? 0,
     resumeCount,
     completed: prefs.onboardingCompleted,
@@ -80,27 +74,14 @@ export async function GET() {
 
 export async function POST(request: Request) {
   const { user } = await getAuthContext();
-  if (!user) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
-  if (user.status !== "ACTIVE") {
-    return NextResponse.json({ error: "Account suspended" }, { status: 403 });
-  }
+  if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  if (user.status !== "ACTIVE") return NextResponse.json({ error: "Account suspended" }, { status: 403 });
 
   const payloadRaw = await request.json().catch(() => ({}));
   const body = onboardingSchema.safeParse(payloadRaw);
   if (!body.success) {
-    const firstIssue = body.error.issues[0];
-    const message = firstIssue?.message ?? "Invalid onboarding input";
-    return NextResponse.json({ error: message }, { status: 400 });
-  }
-
-  if (
-    body.data.salaryMin !== undefined &&
-    body.data.salaryMax !== undefined &&
-    body.data.salaryMax < body.data.salaryMin
-  ) {
-    return NextResponse.json({ error: "salaryMax must be greater than salaryMin" }, { status: 400 });
+    const issue = body.error.issues[0];
+    return NextResponse.json({ error: issue?.message ?? "Invalid onboarding input" }, { status: 400 });
   }
 
   if (body.data.primaryResumeId) {
@@ -114,61 +95,65 @@ export async function POST(request: Request) {
   }
 
   const resumeCount = await prisma.resume.count({ where: { userId: user.id } });
-  const payload = {
-    targetRoles: body.data.targetRoles ?? [],
-    locations: body.data.locations ?? [],
-    salaryMin: body.data.salaryMin ?? undefined,
-    salaryMax: body.data.salaryMax ?? undefined,
-    linkedinUrl: body.data.linkedinUrl ?? "",
-    portfolioUrl: body.data.portfolioUrl ?? "",
-    bio: body.data.bio ?? "",
-    primaryResumeId: body.data.primaryResumeId ?? "",
+
+  const prefsPayload = {
+    firstName: body.data.firstName,
+    lastName: body.data.lastName,
+    email: body.data.email,
+    dateOfBirth: body.data.dateOfBirth,
+    primaryResumeId: body.data.primaryResumeId,
     onboardingCompleted: false,
     onboardingCompletedAt: "",
   };
 
-  const shouldComplete = body.data.completeSetup === true;
-  if (shouldComplete) {
-    const hasMinimumProfile =
-      payload.targetRoles.length > 0 &&
-      payload.locations.length > 0 &&
-      Boolean(payload.bio && payload.bio.trim().length >= 20);
-    if (!hasMinimumProfile) {
-      return NextResponse.json(
-        { error: "Complete target roles, location preferences, and a short bio to finish setup." },
-        { status: 400 },
-      );
+  if (body.data.completeSetup) {
+    const hasProfile =
+      Boolean(prefsPayload.firstName) &&
+      Boolean(prefsPayload.lastName) &&
+      Boolean(prefsPayload.email) &&
+      Boolean(prefsPayload.dateOfBirth);
+
+    if (!hasProfile) {
+      return NextResponse.json({ error: "Complete first name, last name, email, and date of birth." }, { status: 400 });
     }
+
     if (resumeCount < 1) {
       return NextResponse.json({ error: "Upload at least one resume to finish setup." }, { status: 400 });
     }
-    payload.onboardingCompleted = true;
-    payload.onboardingCompletedAt = new Date().toISOString();
+
+    prefsPayload.onboardingCompleted = true;
+    prefsPayload.onboardingCompletedAt = new Date().toISOString();
   } else {
-    const existing = await prisma.user.findUnique({
-      where: { id: user.id },
-      select: { preferences: true },
-    });
+    const existing = await prisma.user.findUnique({ where: { id: user.id }, select: { preferences: true } });
     const previous = toPrefs(existing?.preferences);
     if (previous.onboardingCompleted) {
-      payload.onboardingCompleted = true;
-      payload.onboardingCompletedAt = previous.onboardingCompletedAt || new Date().toISOString();
+      prefsPayload.onboardingCompleted = true;
+      prefsPayload.onboardingCompletedAt = previous.onboardingCompletedAt || new Date().toISOString();
     }
   }
 
-  const profileScore = computeProfileScore(payload, resumeCount);
+  const profileScore = computeProfileScore(prefsPayload, resumeCount);
 
-  await prisma.user.update({
-    where: { id: user.id },
-    data: {
-      preferences: payload,
-      profileScore,
-    },
-  });
+  try {
+    await prisma.user.update({
+      where: { id: user.id },
+      data: {
+        name: `${prefsPayload.firstName} ${prefsPayload.lastName}`.trim(),
+        email: prefsPayload.email,
+        preferences: prefsPayload,
+        profileScore,
+      },
+    });
+  } catch (error: unknown) {
+    if (typeof error === "object" && error && "code" in error && (error as { code?: string }).code === "P2002") {
+      return NextResponse.json({ error: "That email is already used by another account." }, { status: 409 });
+    }
+    return NextResponse.json({ error: "Failed to save onboarding details." }, { status: 500 });
+  }
 
   return NextResponse.json({
     ok: true,
     profileScore,
-    completed: payload.onboardingCompleted,
+    completed: prefsPayload.onboardingCompleted,
   });
 }

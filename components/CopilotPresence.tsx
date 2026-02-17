@@ -39,9 +39,9 @@ export default function CopilotPresence() {
   const actions = useMemo(
     () => [
       { label: "Generate next actions", run: () => router.push("/dashboard") },
-      { label: "Suggest jobs for me", run: () => router.push("/jobs") },
-      { label: "Improve my resume strategy", run: () => router.push("/resumes") },
       { label: "Create outreach follow-up", run: () => router.push("/pipeline") },
+      { label: "Review funnel analytics", run: () => router.push("/analytics") },
+      { label: "Open CRM workspace", run: () => router.push("/company") },
     ],
     [router],
   );

@@ -77,12 +77,28 @@ export async function POST() {
     });
 
     return NextResponse.json({ status: "ok", created });
-  } catch (error) {
+  } catch (error: unknown) {
+    const message =
+      typeof error === "object" && error && "message" in error
+        ? String((error as { message?: unknown }).message ?? "")
+        : "";
+
     await prisma.emailSync.updateMany({
       where: { userId: user.id, provider: "GMAIL" },
       data: { status: "ERROR" },
     });
-    return NextResponse.json({ error: "Email sync failed" }, { status: 502 });
+
+    if (message.toLowerCase().includes("insufficient")) {
+      return NextResponse.json(
+        {
+          error:
+            "Email sync failed: missing Gmail read scope. Re-authenticate with Google and grant Gmail permissions.",
+        },
+        { status: 502 },
+      );
+    }
+
+    return NextResponse.json({ error: `Email sync failed${message ? `: ${message}` : ""}` }, { status: 502 });
   }
 }
 

@@ -45,17 +45,14 @@ export default function CommandBar() {
 
   const items: CommandItem[] = useMemo(
     () => [
-      { id: "job", label: "Search jobs", hint: "Open jobs board", run: () => router.push("/jobs") },
       { id: "pipeline", label: "Jump to application pipeline", hint: "Open pipeline", run: () => router.push("/pipeline") },
-      { id: "add-job", label: "Add job manually", hint: "Open job intake", run: () => router.push("/jobs") },
+      { id: "analytics", label: "Open analytics", hint: "View funnel trends", run: () => router.push("/analytics") },
+      { id: "crm", label: "Open CRM", hint: "Partner/company workspace", run: () => router.push("/company") },
       {
-        id: "generate-resume",
-        label: "Generate resume draft",
-        hint: "Open AI Resume Coach",
-        run: () => {
-          router.push("/resumes");
-          window.dispatchEvent(new CustomEvent("jobflow:resume-generate"));
-        },
+        id: "services",
+        label: "Open services",
+        hint: "View plans and managed support",
+        run: () => router.push("/services"),
       },
       {
         id: "copilot",
@@ -78,10 +75,10 @@ export default function CommandBar() {
     if (!term) return [];
     return [
       {
-        id: "search-term",
-        label: `Search jobs for "${term}"`,
-        hint: "Run focused job search",
-        run: () => router.push(`/jobs?q=${encodeURIComponent(term)}`),
+        id: "search-pipeline",
+        label: `Search pipeline for "${term}"`,
+        hint: "Open application board",
+        run: () => router.push(`/pipeline?q=${encodeURIComponent(term)}`),
       },
     ] as CommandItem[];
   }, [query, router]);
@@ -118,7 +115,7 @@ export default function CommandBar() {
           <input
             autoFocus
             className="command-input"
-            placeholder="Jump to job, application, copilot actions..."
+            placeholder="Jump to pipeline, analytics, CRM, copilot actions..."
             value={query}
             onChange={(event) => setQuery(event.target.value)}
             onKeyDown={(event) => {

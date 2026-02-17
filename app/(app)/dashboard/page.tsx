@@ -102,16 +102,16 @@ export default async function DashboardPage() {
       href: "/pipeline",
     },
     {
-      title: resumeCount ? "Tune your best resume" : "Upload your first resume",
+      title: "Keep funnel quality high",
       detail: resumeCount
-        ? `Current best performer: ${topResume?.label ?? "Resume"}`
-        : "Resume variants unlock conversion insights.",
-      href: "/resumes",
+        ? `Current best conversion profile: ${topResume?.label ?? "Primary profile"}`
+        : "Complete onboarding profile to improve application quality.",
+      href: "/onboarding",
     },
     {
-      title: unreadCount > 0 ? "Review unread updates" : "Hunt for next role",
-      detail: unreadCount > 0 ? `${unreadCount} updates waiting in your inbox.` : "Add 3 strong jobs to maintain momentum.",
-      href: unreadCount > 0 ? "/dashboard" : "/jobs",
+      title: unreadCount > 0 ? "Review unread updates" : "Refresh activity signals",
+      detail: unreadCount > 0 ? `${unreadCount} updates waiting in your inbox.` : "Run Gmail sync to keep pipeline events fresh.",
+      href: "/dashboard",
     },
   ];
 
@@ -133,10 +133,10 @@ export default async function DashboardPage() {
   const insights = [
     topResume
       ? `You get stronger outcomes with ${topResume.label}. Current response lift is ${topResume.rate}% across tracked submissions.`
-      : "Upload resume variants to unlock response lift insights by role and source.",
+      : "Finish onboarding profile to unlock stronger targeting insights.",
     highestProbability
       ? `Highest probability opportunity today is ${highestProbability.label} at an estimated ${highestProbability.score}% interview likelihood.`
-      : "No active opportunities yet. Add jobs to let Copilot rank your best next move.",
+      : "No active opportunities yet. Sync Gmail and track new applications to let Copilot rank next moves.",
     `Your overall interview response rate is ${responseRate}%. ${responseRate >= 30 ? "Momentum is strong this week." : "Focus on higher-fit roles and follow-up cadence."}`,
   ];
 
@@ -177,8 +177,8 @@ export default async function DashboardPage() {
               <Link href="/pipeline" className="btn btn-primary btn-sm">
                 Open Pipeline
               </Link>
-              <Link href="/jobs" className="btn btn-secondary btn-sm">
-                Find Better Matches
+              <Link href="/analytics" className="btn btn-secondary btn-sm">
+                Open Analytics
               </Link>
             </div>
           </article>
