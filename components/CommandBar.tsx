@@ -17,6 +17,7 @@ export default function CommandBar() {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
   const [soundEnabled, setSoundEnabled] = useState(false);
+  const [activeIndex, setActiveIndex] = useState(0);
 
   useEffect(() => {
     const value = window.localStorage.getItem(SOUND_PREF_KEY);
@@ -91,6 +92,10 @@ export default function CommandBar() {
     return item.label.toLowerCase().includes(term) || item.hint.toLowerCase().includes(term);
   });
 
+  useEffect(() => {
+    setActiveIndex(0);
+  }, [query, open]);
+
   const runItem = (item: CommandItem) => {
     item.run();
     setOpen(false);
@@ -117,7 +122,18 @@ export default function CommandBar() {
             value={query}
             onChange={(event) => setQuery(event.target.value)}
             onKeyDown={(event) => {
-              if (event.key === "Enter" && filtered.length) runItem(filtered[0]);
+              if (event.key === "ArrowDown") {
+                event.preventDefault();
+                setActiveIndex((prev) => (filtered.length ? (prev + 1) % filtered.length : 0));
+              }
+              if (event.key === "ArrowUp") {
+                event.preventDefault();
+                setActiveIndex((prev) => (filtered.length ? (prev - 1 + filtered.length) % filtered.length : 0));
+              }
+              if (event.key === "Enter" && filtered.length) {
+                event.preventDefault();
+                runItem(filtered[activeIndex] ?? filtered[0]);
+              }
             }}
           />
           <button type="button" className="btn btn-secondary btn-sm" onClick={toggleSound}>
@@ -125,8 +141,14 @@ export default function CommandBar() {
           </button>
         </div>
         <div className="command-list">
-          {filtered.map((item) => (
-            <button key={item.id} type="button" className="command-item" onClick={() => runItem(item)}>
+          {filtered.map((item, index) => (
+            <button
+              key={item.id}
+              type="button"
+              className={`command-item ${index === activeIndex ? "is-active" : ""}`}
+              onMouseEnter={() => setActiveIndex(index)}
+              onClick={() => runItem(item)}
+            >
               <span>{item.label}</span>
               <small>{item.hint}</small>
             </button>

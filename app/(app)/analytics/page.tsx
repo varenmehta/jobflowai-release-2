@@ -1,11 +1,12 @@
 import { prisma } from "@/lib/db";
 import { getAuthContext } from "@/lib/auth-context";
-import { ApplicationStatus } from "@prisma/client";
 import { redirect } from "next/navigation";
 import dynamic from "next/dynamic";
 import Skeleton from "@/components/Skeleton";
+import { getFunnelCounts, getFunnelInsight, mapCountsToSankey } from "@/lib/analytics/funnel";
 
-const SankeyChart = dynamic(() => import("@/components/SankeyChart"), {
+const FunnelSankeyPanel = dynamic(() => import("@/components/charts/FunnelSankeyPanel"), {
+  ssr: false,
   loading: () => <Skeleton className="skeleton-md" lines={3} />,
 });
 
@@ -61,26 +62,9 @@ export default async function AnalyticsPage() {
     .map(([source, stats]) => ({ source, ...stats }))
     .sort((a, b) => b.total - a.total);
 
-  const statusCounts = await prisma.application.groupBy({
-    by: ["status"],
-    where: { userId },
-    _count: { status: true },
-  });
-
-  const counts = statusCounts.reduce<Record<ApplicationStatus, number>>(
-    (acc, entry) => {
-      acc[entry.status] = entry._count.status;
-      return acc;
-    },
-    {
-      APPLIED: 0,
-      SCREENING: 0,
-      INTERVIEW: 0,
-      OFFER: 0,
-      REJECTED: 0,
-      WITHDRAWN: 0,
-    },
-  );
+  const counts = await getFunnelCounts(userId);
+  const sankeyData = mapCountsToSankey(counts);
+  const funnelInsight = getFunnelInsight(counts);
 
   const screeningOrAbove = counts.SCREENING + counts.INTERVIEW + counts.OFFER;
   const interviewToOffer = counts.INTERVIEW ? Math.round((counts.OFFER / counts.INTERVIEW) * 100) : 0;
@@ -193,8 +177,8 @@ export default async function AnalyticsPage() {
         </div>
         <div className="card">
           <h3>Application Flow</h3>
-          <p className="kpi-title">Applied → Screening → Interview</p>
-          <SankeyChart counts={counts} />
+          <p className="kpi-title">Applied to Screening to Interview</p>
+          <FunnelSankeyPanel initialData={sankeyData} initialInsight={funnelInsight} />
         </div>
       </div>
 
@@ -203,8 +187,6 @@ export default async function AnalyticsPage() {
         <p className="kpi-title">8-week application and interview trend snapshot</p>
         <TrendLineChart points={trendPoints} />
       </div>
-
-      <button type="button" className="floating-action" aria-label="Quick add">+</button>
     </div>
   );
 }

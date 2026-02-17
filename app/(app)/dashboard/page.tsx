@@ -216,6 +216,28 @@ export default async function DashboardPage() {
       </ProgressiveReveal>
 
       <ProgressiveReveal>
+        <section className="card" style={{ marginTop: "18px" }}>
+          <details className="stats-collapse">
+            <summary>Stats</summary>
+            <div className="grid-three" style={{ marginTop: "12px" }}>
+              <article className="card">
+                <div className="kpi-title">Total Applied</div>
+                <div className="kpi-value">{totalApplied}</div>
+              </article>
+              <article className="card">
+                <div className="kpi-title">Interviews</div>
+                <div className="kpi-value">{interviews}</div>
+              </article>
+              <article className="card success-state">
+                <div className="kpi-title">Offers</div>
+                <div className="kpi-value">{offers}</div>
+              </article>
+            </div>
+          </details>
+        </section>
+      </ProgressiveReveal>
+
+      <ProgressiveReveal>
         <section style={{ marginTop: "18px" }}>
           <EmailSyncClient />
         </section>
