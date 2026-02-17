@@ -45,6 +45,10 @@ export async function POST(request: Request) {
     locations,
     limit,
   });
+  const discoveredBySource = discovered.reduce<Record<string, number>>((acc, item) => {
+    acc[item.source] = (acc[item.source] ?? 0) + 1;
+    return acc;
+  }, {});
 
   let created = 0;
   for (const item of discovered) {
@@ -90,6 +94,7 @@ export async function POST(request: Request) {
   return NextResponse.json({
     ok: true,
     discovered: discovered.length,
+    discoveredBySource,
     created,
     targetRoles,
     locations,
