@@ -38,6 +38,29 @@ function extractEmailDomainLabel(fromAddress: string) {
   return label;
 }
 
+function extractDisplayName(fromAddress: string) {
+  const trimmed = fromAddress.trim();
+  const angle = trimmed.match(/^(.+?)\s*</);
+  if (angle?.[1]) return angle[1].replace(/["']/g, "").trim();
+  return trimmed.replace(/<.*>/, "").replace(/["']/g, "").trim();
+}
+
+function extractCompanyHint(text: string) {
+  const patterns = [
+    /application (?:to|for)\s+([a-z0-9&'().,\-\s]{2,60})/i,
+    /interview with\s+([a-z0-9&'().,\-\s]{2,60})/i,
+    /update from\s+([a-z0-9&'().,\-\s]{2,60})/i,
+    /opportunity at\s+([a-z0-9&'().,\-\s]{2,60})/i,
+  ];
+  for (const pattern of patterns) {
+    const match = text.match(pattern);
+    if (match?.[1]) {
+      return normalize(match[1]).split(" ").slice(0, 4).join(" ");
+    }
+  }
+  return "";
+}
+
 function scoreApplicationMatch(application: CandidateApplication, combinedText: string, fromAddress: string) {
   const companyName = application.job.company?.name ?? "";
   const companyNorm = normalize(companyName);
@@ -45,6 +68,19 @@ function scoreApplicationMatch(application: CandidateApplication, combinedText: 
   const text = normalize(combinedText);
   const from = fromAddress.toLowerCase();
   const domainLabel = extractEmailDomainLabel(fromAddress);
+  const displayName = normalize(extractDisplayName(fromAddress));
+  const companyHint = extractCompanyHint(`${fromAddress} ${combinedText}`);
+  const atsDomains = new Set([
+    "greenhouse",
+    "lever",
+    "ashby",
+    "workday",
+    "myworkdayjobs",
+    "smartrecruiters",
+    "jobvite",
+    "icims",
+    "jazzhr",
+  ]);
   let score = 0;
 
   if (companyNorm && text.includes(companyNorm)) score += 7;
@@ -63,7 +99,16 @@ function scoreApplicationMatch(application: CandidateApplication, combinedText: 
     score += 2;
   }
 
-  if (domainLabel) {
+  if (companyTokens.length && companyTokens.some((token) => displayName.includes(token))) {
+    score += 3;
+  }
+
+  if (companyHint) {
+    if (companyNorm.includes(companyHint) || companyHint.includes(companyNorm)) score += 5;
+    else if (companyTokens.some((token) => companyHint.includes(token) || token.includes(companyHint))) score += 3;
+  }
+
+  if (domainLabel && !atsDomains.has(domainLabel)) {
     if (companyNorm.includes(domainLabel) || domainLabel.includes(companyTokens[0] ?? "")) {
       score += 4;
     } else if (companyTokens.some((token) => domainLabel.includes(token) || token.includes(domainLabel))) {
