@@ -42,9 +42,17 @@ export default function EmailSyncClient() {
     const data = await res.json();
     setMessage(
       res.ok
-        ? `Synced ${data.created ?? 0} emails. Apps ${data.applicationsCount ?? 0}, historical ${data.historicalEventsCount ?? 0}, detected ${data.detectedEvents ?? 0}, matched ${data.matchedEvents ?? 0}, updated ${data.pipelineUpdates ?? 0} stages, refreshed ${data.activityTouches ?? 0} cards.`
+        ? `Synced ${data.created ?? 0} emails. Apps ${data.applicationsCount ?? 0}, historical ${data.historicalEventsCount ?? 0}, detected ${data.detectedEvents ?? 0}, matched ${data.matchedEvents ?? 0}, created ${data.createdApplications ?? 0}, updated ${data.pipelineUpdates ?? 0} stages, refreshed ${data.activityTouches ?? 0} cards.`
         : data.error ?? "Failed",
     );
+    await load();
+  };
+
+  const desync = async () => {
+    setMessage("Clearing synced Gmail data...");
+    const res = await fetch("/api/email-sync", { method: "DELETE" });
+    const data = await res.json().catch(() => ({}));
+    setMessage(res.ok ? `Desynced. Removed ${data.deletedEvents ?? 0} tracked emails.` : data.error ?? "Failed");
     await load();
   };
 
@@ -58,6 +66,9 @@ export default function EmailSyncClient() {
         </button>
         <button type="button" className="btn btn-secondary btn-sm" onClick={load}>
           {loading ? "Refreshing..." : "Refresh status"}
+        </button>
+        <button type="button" className="btn btn-secondary btn-sm" onClick={desync}>
+          Desync Gmail
         </button>
       </div>
       {info && (

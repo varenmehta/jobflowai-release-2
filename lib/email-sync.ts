@@ -101,6 +101,106 @@ function extractCompanyHint(text: string) {
   return "";
 }
 
+function toTitleCase(input: string) {
+  return input
+    .split(" ")
+    .filter(Boolean)
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(" ");
+}
+
+function deriveCompanyName(subject: string, snippet: string, fromAddress: string) {
+  const text = `${subject}\n${snippet}\n${fromAddress}`;
+  const explicit = extractCompanyHint(text);
+  if (explicit) return toTitleCase(explicit);
+
+  const displayName = normalize(extractDisplayName(fromAddress));
+  if (displayName && !/(no reply|noreply|notifications?|careers?|talent|recruiting|team)/i.test(displayName)) {
+    return toTitleCase(displayName.split(" ").slice(0, 4).join(" "));
+  }
+
+  const domainLabel = extractEmailDomainLabel(fromAddress);
+  if (domainLabel && !/(greenhouse|lever|ashby|workday|myworkdayjobs|smartrecruiters|jobvite|icims|jazzhr)/i.test(domainLabel)) {
+    return toTitleCase(domainLabel.replace(/[^a-z0-9]+/gi, " "));
+  }
+
+  return "";
+}
+
+function deriveRoleTitle(subject: string) {
+  const match =
+    subject.match(/(?:for|as)\s+(.+?)\s+(?:at|with)\s+/i) ??
+    subject.match(/application (?:for|to)\s+(.+?)\s*$/i);
+  if (match?.[1]) {
+    const value = normalize(match[1]).slice(0, 80);
+    if (value.length >= 3) return toTitleCase(value);
+  }
+  return "Application from Gmail";
+}
+
+async function createApplicationFromEmail(params: {
+  userId: string;
+  subject: string;
+  snippet: string;
+  fromAddress: string;
+  detectedStatus: ApplicationStatus;
+  occurredAt: Date;
+}) {
+  const companyName = deriveCompanyName(params.subject, params.snippet, params.fromAddress);
+  if (!companyName) return null;
+
+  const roleTitle = deriveRoleTitle(params.subject);
+
+  const existing = await prisma.application.findFirst({
+    where: {
+      userId: params.userId,
+      job: {
+        title: roleTitle,
+        company: { name: companyName },
+      },
+    },
+    include: { job: { include: { company: true } } },
+  });
+
+  if (existing) {
+    await prisma.application.update({
+      where: { id: existing.id },
+      data: {
+        status: params.detectedStatus === "APPLIED" ? existing.status : params.detectedStatus,
+        lastActivityAt: params.occurredAt,
+      },
+    });
+    return { ...existing, status: params.detectedStatus, lastActivityAt: params.occurredAt };
+  }
+
+  const company = await prisma.company.upsert({
+    where: { name: companyName },
+    update: {},
+    create: { name: companyName },
+  });
+
+  const job = await prisma.job.create({
+    data: {
+      title: roleTitle,
+      source: "Gmail Sync",
+      description: params.subject,
+      companyId: company.id,
+    },
+  });
+
+  const application = await prisma.application.create({
+    data: {
+      userId: params.userId,
+      jobId: job.id,
+      status: params.detectedStatus,
+      lastActivityAt: params.occurredAt,
+    },
+    include: { job: { include: { company: true } } },
+  });
+
+  return application;
+}
+
 function scoreApplicationMatch(application: CandidateApplication, combinedText: string, fromAddress: string) {
   const companyName = application.job.company?.name ?? "";
   const companyNorm = normalize(companyName);
@@ -234,6 +334,7 @@ export async function syncGmailEventsToPipeline(input: SyncInput) {
   let activityTouches = 0;
   let detectedEvents = 0;
   let matchedEvents = 0;
+  let createdApplications = 0;
 
   for (const msg of messages) {
     if (!msg.id) continue;
@@ -303,6 +404,20 @@ export async function syncGmailEventsToPipeline(input: SyncInput) {
         matched.lastActivityAt = occurredAt;
         activityTouches += 1;
       }
+    } else if (detected?.status) {
+      const createdFromEmail = await createApplicationFromEmail({
+        userId: input.userId,
+        subject,
+        snippet,
+        fromAddress,
+        detectedStatus: detected.status,
+        occurredAt,
+      });
+      if (createdFromEmail) {
+        applications.push(createdFromEmail);
+        createdApplications += 1;
+        pipelineUpdates += 1;
+      }
     }
   }
 
@@ -340,8 +455,24 @@ export async function syncGmailEventsToPipeline(input: SyncInput) {
     const matched = pickApplication(applications, historicalText, event.snippet ?? "", event.fromAddress ?? "");
     const detectedFromHistory = event.detectedStatus ?? STATUS_PATTERNS.find((item) => item.pattern.test(historicalText))?.status ?? null;
 
-    if (!matched || !detectedFromHistory) continue;
+    if (!detectedFromHistory) continue;
     detectedEvents += 1;
+    if (!matched) {
+      const createdFromHistory = await createApplicationFromEmail({
+        userId: input.userId,
+        subject: event.subject,
+        snippet: event.snippet ?? "",
+        fromAddress: event.fromAddress ?? "",
+        detectedStatus: detectedFromHistory,
+        occurredAt: event.occurredAt,
+      });
+      if (createdFromHistory) {
+        applications.push(createdFromHistory);
+        createdApplications += 1;
+        pipelineUpdates += 1;
+      }
+      continue;
+    }
     matchedEvents += 1;
     const next = nextStatus(matched.status, detectedFromHistory);
     if (!next) {
@@ -399,6 +530,7 @@ export async function syncGmailEventsToPipeline(input: SyncInput) {
     activityTouches,
     detectedEvents,
     matchedEvents,
+    createdApplications,
     applicationsCount: applications.length,
     historicalEventsCount: historicalEvents.length,
   };
