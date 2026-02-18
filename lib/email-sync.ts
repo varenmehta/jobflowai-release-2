@@ -262,7 +262,6 @@ export async function syncGmailEventsToPipeline(input: SyncInput) {
     where: {
       userId: input.userId,
       provider: "GMAIL",
-      detectedStatus: { not: null },
       occurredAt: { gte: new Date(Date.now() - rangeDays * 24 * 60 * 60 * 1000) },
     },
     orderBy: { occurredAt: "desc" },
@@ -278,12 +277,17 @@ export async function syncGmailEventsToPipeline(input: SyncInput) {
 
   for (const event of historicalEvents) {
     const matched = pickApplication(applications, event.subject, event.snippet ?? "", event.fromAddress ?? "");
-    if (!matched || !event.detectedStatus) continue;
+    const detectedFromHistory =
+      event.detectedStatus ??
+      STATUS_PATTERNS.find((item) => item.pattern.test(`${event.subject} ${event.snippet ?? ""}`))?.status ??
+      null;
+
+    if (!matched || !detectedFromHistory) continue;
     matchedEvents += 1;
-    const next = nextStatus(matched.status, event.detectedStatus);
+    const next = nextStatus(matched.status, detectedFromHistory);
     if (!next) {
       if (
-        event.detectedStatus === "APPLIED" &&
+        detectedFromHistory === "APPLIED" &&
         matched.status === "APPLIED" &&
         event.occurredAt.getTime() > matched.lastActivityAt.getTime()
       ) {

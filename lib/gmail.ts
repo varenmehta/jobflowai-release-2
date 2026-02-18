@@ -8,7 +8,11 @@ export function getGmailClient(accessToken: string) {
 }
 
 export const STATUS_PATTERNS: Array<{ status: ApplicationStatus; pattern: RegExp }> = [
-  { status: "APPLIED", pattern: /application received|thanks for applying/i },
+  {
+    status: "APPLIED",
+    pattern:
+      /application (?:has been )?received|thanks for applying|thank you for applying|your application (?:was|has been) submitted/i,
+  },
   { status: "SCREENING", pattern: /phone screen|screening|recruiter call|initial call|assessment/i },
   { status: "INTERVIEW", pattern: /interview|schedule a call/i },
   { status: "REJECTED", pattern: /unfortunately|not moving forward|regret to inform/i },
