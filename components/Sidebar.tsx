@@ -6,6 +6,8 @@ import {
   LayoutDashboard,
   Route,
   BarChart3,
+  Briefcase,
+  FileText,
   Sparkles,
   Settings,
   Zap,
@@ -14,6 +16,8 @@ import {
 const navItems = [
   { label: "Dashboard", href: "/dashboard", icon: LayoutDashboard },
   { label: "Pipeline", href: "/pipeline", icon: Route },
+  { label: "Job Board", href: "/jobs", icon: Briefcase },
+  { label: "Resumes", href: "/resumes", icon: FileText },
   { label: "Analytics", href: "/analytics", icon: BarChart3 },
   { label: "Services", href: "/services", icon: Sparkles },
 ];

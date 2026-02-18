@@ -1,6 +1,6 @@
 import { ApplicationStatus } from "@prisma/client";
 import { prisma } from "@/lib/db";
-import { getGmailClient, STATUS_PATTERNS } from "@/lib/gmail";
+import { detectStatusFromText, getGmailClient } from "@/lib/gmail";
 import { createNotification } from "@/lib/notifications";
 
 type SyncInput = {
@@ -355,9 +355,9 @@ export async function syncGmailEventsToPipeline(input: SyncInput) {
     const snippet = detail.data.snippet ?? "";
     const fullText = extractPayloadText(detail.data.payload as any);
     const occurredAt = detail.data.internalDate ? new Date(Number(detail.data.internalDate)) : new Date();
-    const detected = STATUS_PATTERNS.find((item) => item.pattern.test(`${subject} ${snippet} ${fullText}`));
+    const detected = detectStatusFromText(`${subject} ${snippet} ${fullText}`);
     const matched = pickApplication(applications, `${subject} ${fullText}`, snippet, fromAddress);
-    if (detected?.status) detectedEvents += 1;
+    if (detected) detectedEvents += 1;
 
     await prisma.emailEvent.create({
       data: {
@@ -366,7 +366,7 @@ export async function syncGmailEventsToPipeline(input: SyncInput) {
         subject,
         fromAddress,
         snippet,
-        detectedStatus: detected?.status,
+        detectedStatus: detected ?? undefined,
         detectedCompany: matched?.job.company?.name ?? undefined,
         detectedRole: matched?.job.title ?? undefined,
         sourceMessageId: msg.id,
@@ -375,9 +375,9 @@ export async function syncGmailEventsToPipeline(input: SyncInput) {
     });
     created += 1;
 
-    if (matched && detected?.status) {
+    if (matched && detected) {
       matchedEvents += 1;
-      const next = nextStatus(matched.status, detected.status);
+      const next = nextStatus(matched.status, detected);
       if (next) {
         await prisma.application.update({
           where: { id: matched.id },
@@ -389,7 +389,7 @@ export async function syncGmailEventsToPipeline(input: SyncInput) {
         matched.status = next;
         pipelineUpdates += 1;
       } else if (
-        detected.status === "APPLIED" &&
+        detected === "APPLIED" &&
         (matched.status === "APPLIED" || matched.status === "WITHDRAWN")
       ) {
         const refreshedStatus = matched.status === "WITHDRAWN" ? "APPLIED" : matched.status;
@@ -404,13 +404,13 @@ export async function syncGmailEventsToPipeline(input: SyncInput) {
         matched.lastActivityAt = occurredAt;
         activityTouches += 1;
       }
-    } else if (detected?.status) {
+    } else if (detected) {
       const createdFromEmail = await createApplicationFromEmail({
         userId: input.userId,
         subject,
         snippet,
         fromAddress,
-        detectedStatus: detected.status,
+        detectedStatus: detected,
         occurredAt,
       });
       if (createdFromEmail) {
@@ -453,7 +453,7 @@ export async function syncGmailEventsToPipeline(input: SyncInput) {
     }
 
     const matched = pickApplication(applications, historicalText, event.snippet ?? "", event.fromAddress ?? "");
-    const detectedFromHistory = event.detectedStatus ?? STATUS_PATTERNS.find((item) => item.pattern.test(historicalText))?.status ?? null;
+    const detectedFromHistory = event.detectedStatus ?? detectStatusFromText(historicalText);
 
     if (!detectedFromHistory) continue;
     detectedEvents += 1;
