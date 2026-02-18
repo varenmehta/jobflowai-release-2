@@ -5,6 +5,47 @@ import { prisma } from "@/lib/db";
 import { isDemoMode } from "@/lib/config";
 import { UserRole, UserStatus } from "@prisma/client";
 
+async function refreshGoogleAccessToken(token: Record<string, unknown>) {
+  const refreshToken = typeof token.refreshToken === "string" ? token.refreshToken : "";
+  if (!refreshToken) return token;
+
+  try {
+    const body = new URLSearchParams({
+      client_id: process.env.GOOGLE_CLIENT_ID ?? "",
+      client_secret: process.env.GOOGLE_CLIENT_SECRET ?? "",
+      grant_type: "refresh_token",
+      refresh_token: refreshToken,
+    });
+
+    const response = await fetch("https://oauth2.googleapis.com/token", {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body,
+    });
+
+    const data = (await response.json()) as {
+      access_token?: string;
+      expires_in?: number;
+      refresh_token?: string;
+      error?: string;
+    };
+
+    if (!response.ok || !data.access_token) {
+      return { ...token, error: data.error ?? "RefreshAccessTokenError" };
+    }
+
+    return {
+      ...token,
+      accessToken: data.access_token,
+      accessTokenExpires: Date.now() + (data.expires_in ?? 3600) * 1000,
+      refreshToken: data.refresh_token ?? refreshToken,
+      error: undefined,
+    };
+  } catch {
+    return { ...token, error: "RefreshAccessTokenError" };
+  }
+}
+
 export const { handlers, auth } = NextAuth({
   adapter: PrismaAdapter(prisma),
   session: { strategy: "jwt" },
@@ -29,6 +70,11 @@ export const { handlers, auth } = NextAuth({
     async jwt({ token, account, user, trigger, session }) {
       if (account?.access_token) {
         token.accessToken = account.access_token;
+        token.accessTokenExpires = account.expires_at ? account.expires_at * 1000 : Date.now() + 3600 * 1000;
+      }
+
+      if (account?.refresh_token) {
+        token.refreshToken = account.refresh_token;
       }
 
       // Avoid Prisma calls here because this callback is also executed in Edge middleware.
@@ -44,7 +90,14 @@ export const { handlers, auth } = NextAuth({
 
       if (!token.role) token.role = UserRole.CANDIDATE;
       if (!token.status) token.status = UserStatus.ACTIVE;
-      return token;
+
+      const expiresAt = typeof token.accessTokenExpires === "number" ? token.accessTokenExpires : 0;
+      if (token.accessToken && Date.now() < expiresAt - 60_000) {
+        return token;
+      }
+
+      if (!token.refreshToken) return token;
+      return refreshGoogleAccessToken(token as Record<string, unknown>);
     },
     async session({ session, token }) {
       if (session.user && token.sub) {
