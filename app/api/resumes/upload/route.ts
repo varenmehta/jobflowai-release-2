@@ -20,6 +20,16 @@ function sanitizeFilename(name: string) {
   return last.replace(/[^a-zA-Z0-9._-]/g, "_");
 }
 
+async function ensureResumesBucket() {
+  const { data } = await supabaseServer.storage.getBucket("resumes");
+  if (data) return;
+  await supabaseServer.storage.createBucket("resumes", {
+    public: true,
+    fileSizeLimit: 8 * 1024 * 1024,
+    allowedMimeTypes: [...ALLOWED_CONTENT_TYPES],
+  });
+}
+
 export async function POST(request: Request) {
   if (!process.env.SUPABASE_URL || !process.env.SUPABASE_SERVICE_ROLE_KEY) {
     return NextResponse.json(
@@ -39,6 +49,8 @@ export async function POST(request: Request) {
   const contentTypeHeader = request.headers.get("content-type") ?? "";
 
   if (contentTypeHeader.includes("multipart/form-data")) {
+    await ensureResumesBucket();
+
     const form = await request.formData();
     const file = form.get("file");
     if (!(file instanceof File)) {
@@ -88,6 +100,8 @@ export async function POST(request: Request) {
   if (!ALLOWED_CONTENT_TYPES.has(body.data.contentType)) {
     return NextResponse.json({ error: "Unsupported file type" }, { status: 400 });
   }
+
+  await ensureResumesBucket();
 
   const safeFilename = sanitizeFilename(body.data.filename);
   if (!safeFilename) {

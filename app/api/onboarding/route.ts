@@ -2,6 +2,8 @@ import { NextResponse } from "next/server";
 import { getAuthContext } from "@/lib/auth-context";
 import { prisma } from "@/lib/db";
 import { z } from "zod";
+import { getGmailClient, STATUS_PATTERNS } from "@/lib/gmail";
+import { ApplicationStatus } from "@prisma/client";
 
 const onboardingSchema = z.object({
   firstName: z.string().trim().max(80).default(""),
@@ -9,6 +11,7 @@ const onboardingSchema = z.object({
   email: z.string().trim().email().or(z.literal("")).default(""),
   dateOfBirth: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).or(z.literal("")).default(""),
   primaryResumeId: z.string().default(""),
+  gmailSyncOptIn: z.boolean().default(false),
   completeSetup: z.boolean().default(false),
 });
 
@@ -28,6 +31,7 @@ function toPrefs(raw: unknown) {
     email: typeof base.email === "string" ? base.email : "",
     dateOfBirth: typeof base.dateOfBirth === "string" ? base.dateOfBirth : "",
     primaryResumeId: typeof base.primaryResumeId === "string" ? base.primaryResumeId : "",
+    gmailSyncOptIn: base.gmailSyncOptIn === true,
     onboardingCompleted: base.onboardingCompleted === true,
     onboardingCompletedAt: typeof base.onboardingCompletedAt === "string" ? base.onboardingCompletedAt : "",
   };
@@ -41,6 +45,79 @@ function computeProfileScore(input: ReturnType<typeof toPrefs>, resumeCount: num
   if (input.dateOfBirth) score += 20;
   if (resumeCount > 0) score += 20;
   return Math.min(100, score);
+}
+
+async function runInitialGmailSync(userId: string, accessToken: string) {
+  const gmail = getGmailClient(accessToken);
+  const messages: Array<{ id?: string | null }> = [];
+  let nextPageToken: string | undefined;
+  let pages = 0;
+
+  do {
+    const list = await gmail.users.messages.list({
+      userId: "me",
+      maxResults: 50,
+      pageToken: nextPageToken,
+      q: "newer_than:30d",
+    });
+    messages.push(...(list.data.messages ?? []));
+    nextPageToken = list.data.nextPageToken ?? undefined;
+    pages += 1;
+  } while (nextPageToken && pages < 3);
+
+  await prisma.emailSync.upsert({
+    where: { userId_provider: { userId, provider: "GMAIL" } },
+    update: { status: "ACTIVE" },
+    create: {
+      userId,
+      provider: "GMAIL",
+      status: "ACTIVE",
+    },
+  });
+
+  let created = 0;
+  for (const msg of messages) {
+    if (!msg.id) continue;
+
+    const existing = await prisma.emailEvent.findFirst({
+      where: {
+        userId,
+        provider: "GMAIL",
+        sourceMessageId: msg.id,
+      },
+      select: { id: true },
+    });
+    if (existing) continue;
+
+    const detail = await gmail.users.messages.get({ userId: "me", id: msg.id, format: "metadata" });
+    const headers = detail.data.payload?.headers ?? [];
+    const subject = headers.find((h) => h.name === "Subject")?.value ?? "";
+    const fromAddress = headers.find((h) => h.name === "From")?.value ?? "";
+    const snippet = detail.data.snippet ?? "";
+    const occurredAt = detail.data.internalDate ? new Date(Number(detail.data.internalDate)) : new Date();
+    const detected = STATUS_PATTERNS.find((item) => item.pattern.test(subject + snippet));
+
+    await prisma.emailEvent.create({
+      data: {
+        userId,
+        provider: "GMAIL",
+        subject,
+        fromAddress,
+        snippet,
+        detectedStatus: detected?.status as ApplicationStatus | undefined,
+        sourceMessageId: msg.id,
+        occurredAt,
+      },
+    });
+    created += 1;
+  }
+
+  await prisma.emailSync.updateMany({
+    where: { userId, provider: "GMAIL" },
+    data: { lastSyncedAt: new Date(), status: "ACTIVE" },
+  });
+
+  return created;
 }
 
 export async function GET() {
@@ -73,7 +150,7 @@ export async function GET() {
 }
 
 export async function POST(request: Request) {
-  const { user } = await getAuthContext();
+  const { session, user } = await getAuthContext();
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   if (user.status !== "ACTIVE") return NextResponse.json({ error: "Account suspended" }, { status: 403 });
 
@@ -102,6 +179,7 @@ export async function POST(request: Request) {
     email: body.data.email,
     dateOfBirth: body.data.dateOfBirth,
     primaryResumeId: body.data.primaryResumeId,
+    gmailSyncOptIn: body.data.gmailSyncOptIn,
     onboardingCompleted: false,
     onboardingCompletedAt: "",
   };
@@ -129,6 +207,7 @@ export async function POST(request: Request) {
     if (previous.onboardingCompleted) {
       prefsPayload.onboardingCompleted = true;
       prefsPayload.onboardingCompletedAt = previous.onboardingCompletedAt || new Date().toISOString();
+      prefsPayload.gmailSyncOptIn = previous.gmailSyncOptIn;
     }
   }
 
@@ -151,9 +230,22 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Failed to save onboarding details." }, { status: 500 });
   }
 
+  let gmailSyncCreated = 0;
+  if (prefsPayload.onboardingCompleted && prefsPayload.gmailSyncOptIn && session?.accessToken) {
+    try {
+      gmailSyncCreated = await runInitialGmailSync(user.id, session.accessToken);
+    } catch {
+      await prisma.emailSync.updateMany({
+        where: { userId: user.id, provider: "GMAIL" },
+        data: { status: "ERROR" },
+      });
+    }
+  }
+
   return NextResponse.json({
     ok: true,
     profileScore,
     completed: prefsPayload.onboardingCompleted,
+    gmailSyncCreated,
   });
 }

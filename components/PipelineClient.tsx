@@ -7,7 +7,6 @@ import Drawer from "@/components/ui/Drawer";
 import Button from "@/components/ui/Button";
 import Badge from "@/components/ui/Badge";
 import UISkeleton from "@/components/ui/Skeleton";
-import Tooltip from "@/components/ui/Tooltip";
 import { motionPresets } from "@/lib/motion/presets";
 
 export type PipelineApplication = {
@@ -29,42 +28,74 @@ const stageMeta = [
   { key: "SCREENING", label: "Screening", className: "stage-screening" },
   { key: "INTERVIEW", label: "Interview", className: "stage-interview" },
   { key: "OFFER", label: "Offer", className: "stage-offer" },
+  { key: "GHOSTED", label: "Ghosted / Withdrawn", className: "stage-ghosted" },
   { key: "REJECTED", label: "Rejected", className: "stage-rejected" },
   { key: "WITHDRAWN", label: "Withdrawn", className: "stage-withdrawn" },
 ] as const;
 
 type StageKey = (typeof stageMeta)[number]["key"];
+type PersistedStage = Exclude<StageKey, "GHOSTED">;
+
+type EditorState = {
+  open: boolean;
+  mode: "create" | "edit";
+  applicationId?: string;
+  title: string;
+  companyName: string;
+  source: string;
+  url: string;
+  description: string;
+  status: StageKey;
+};
+
+function daysSince(updatedAt?: string | Date) {
+  if (!updatedAt) return 0;
+  const ms = Date.now() - new Date(updatedAt).getTime();
+  return Math.max(0, Math.floor(ms / (1000 * 60 * 60 * 24)));
+}
 
 function daysInStage(updatedAt?: string | Date) {
-  if (!updatedAt) return "0d";
-  const ms = Date.now() - new Date(updatedAt).getTime();
-  return `${Math.max(0, Math.floor(ms / (1000 * 60 * 60 * 24)))}d`;
+  return `${daysSince(updatedAt)}d`;
 }
 
 function getAgingTone(updatedAt?: string | Date) {
-  const days = Number(daysInStage(updatedAt).replace("d", ""));
+  const days = daysSince(updatedAt);
   if (days <= 5) return "fresh";
   if (days <= 12) return "warm";
   return "risk";
 }
 
-function deriveIntent(item: PipelineApplication) {
-  const text = `${item.job.title} ${item.job.description ?? ""}`.toLowerCase();
-  let score = 45;
-  if (text.includes("remote") || text.includes("hybrid")) score += 10;
-  if (text.includes("senior") || text.includes("lead")) score += 8;
-  if (item.status === "INTERVIEW") score += 18;
-  if (item.status === "OFFER") score += 30;
-  return Math.min(99, score);
+function ghostRiskByDays(updatedAt?: string | Date) {
+  const days = daysSince(updatedAt);
+  const curve = 12 + 80 * (1 - Math.exp(-days / 14));
+  return Math.max(8, Math.min(92, Math.round(curve)));
 }
 
-function deriveGhostRisk(item: PipelineApplication) {
-  const days = Number(daysInStage(item.updatedAt).replace("d", ""));
-  let risk = 16;
-  if (days > 10) risk += 20;
-  if (days > 20) risk += 20;
-  if (!item.job.url) risk += 12;
-  return Math.min(95, risk);
+function isGhosted(item: PipelineApplication) {
+  if (item.status === "OFFER" || item.status === "REJECTED" || item.status === "WITHDRAWN") return false;
+  return daysSince(item.updatedAt) >= 3;
+}
+
+function displayStage(item: PipelineApplication): StageKey {
+  if (isGhosted(item)) return "GHOSTED";
+  return item.status;
+}
+
+function toPersistedStage(stage: StageKey): PersistedStage {
+  return stage === "GHOSTED" ? "WITHDRAWN" : stage;
+}
+
+function emptyEditor(mode: "create" | "edit"): EditorState {
+  return {
+    open: true,
+    mode,
+    title: "",
+    companyName: "",
+    source: "Manual",
+    url: "",
+    description: "",
+    status: "APPLIED",
+  };
 }
 
 export default function PipelineClient({ applications }: { applications: PipelineApplication[] }) {
@@ -78,12 +109,15 @@ export default function PipelineClient({ applications }: { applications: Pipelin
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [drawerLoading, setDrawerLoading] = useState(false);
   const [notesById, setNotesById] = useState<Record<string, string>>({});
+  const [editor, setEditor] = useState<EditorState>(emptyEditor("create"));
+  const [savingEditor, setSavingEditor] = useState(false);
+  const [deleting, setDeleting] = useState(false);
   const longPressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const stageCounts = useMemo(
     () =>
       stageMeta.reduce<Record<string, number>>((acc, stage) => {
-        acc[stage.key] = items.filter((item) => item.status === stage.key).length;
+        acc[stage.key] = items.filter((item) => displayStage(item) === stage.key).length;
         return acc;
       }, {}),
     [items],
@@ -117,7 +151,14 @@ export default function PipelineClient({ applications }: { applications: Pipelin
     ].filter(Boolean) as { label: string; at: string }[];
   }, [selected, selectedTimeline]);
 
-  const updateStatus = async (id: string, status: StageKey, previousStatus: StageKey) => {
+  const reload = async () => {
+    const res = await fetch("/api/applications", { cache: "no-store" });
+    if (!res.ok) return;
+    const data = await res.json();
+    setItems(data.applications ?? []);
+  };
+
+  const updateStatus = async (id: string, status: PersistedStage, previousStatus: PersistedStage) => {
     setMessage("Updating stage...");
     const res = await fetch("/api/applications", {
       method: "POST",
@@ -127,7 +168,7 @@ export default function PipelineClient({ applications }: { applications: Pipelin
 
     if (!res.ok) {
       setItems((prev) => prev.map((item) => (item.id === id ? { ...item, status: previousStatus } : item)));
-      const data = await res.json();
+      const data = await res.json().catch(() => ({}));
       setMessage(data.error ?? "Failed to update stage. Rolled back.");
       return;
     }
@@ -137,15 +178,16 @@ export default function PipelineClient({ applications }: { applications: Pipelin
 
   const handleDrop = async (id: string, stage: StageKey) => {
     const current = items.find((item) => item.id === id);
-    if (!current || current.status === stage) return;
+    const targetStatus = toPersistedStage(stage);
+    if (!current || current.status === targetStatus) return;
 
     setHoverStage(null);
     setDroppingId(id);
 
     const previousStatus = current.status;
-    setItems((prev) => prev.map((item) => (item.id === id ? { ...item, status: stage, updatedAt: new Date() } : item)));
+    setItems((prev) => prev.map((item) => (item.id === id ? { ...item, status: targetStatus, updatedAt: new Date() } : item)));
 
-    await updateStatus(id, stage, previousStatus);
+    await updateStatus(id, targetStatus, previousStatus);
 
     window.setTimeout(() => {
       setDroppingId((value) => (value === id ? null : value));
@@ -175,6 +217,104 @@ export default function PipelineClient({ applications }: { applications: Pipelin
     }
   };
 
+  const openCreate = () => {
+    setEditor(emptyEditor("create"));
+  };
+
+  const openEdit = () => {
+    if (!selected) return;
+    setEditor({
+      open: true,
+      mode: "edit",
+      applicationId: selected.id,
+      title: selected.job.title,
+      companyName: selected.job.company?.name ?? "",
+      source: selected.job.source ?? "Manual",
+      url: selected.job.url ?? "",
+      description: selected.job.description ?? "",
+      status: selected.status,
+    });
+  };
+
+  const saveEditor = async () => {
+    if (!editor.title.trim() || !editor.companyName.trim()) {
+      setMessage("Title and company are required.");
+      return;
+    }
+
+    setSavingEditor(true);
+    try {
+      if (editor.mode === "create") {
+        const res = await fetch("/api/applications", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            title: editor.title.trim(),
+            companyName: editor.companyName.trim(),
+            source: editor.source.trim() || "Manual",
+            url: editor.url.trim() || undefined,
+            description: editor.description.trim() || undefined,
+            status: toPersistedStage(editor.status),
+          }),
+        });
+
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) {
+          setMessage(data.error ?? "Failed to create application card.");
+          return;
+        }
+      } else {
+        const res = await fetch("/api/applications", {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            id: editor.applicationId,
+            title: editor.title.trim(),
+            companyName: editor.companyName.trim(),
+            source: editor.source.trim() || "Manual",
+            url: editor.url.trim() || undefined,
+            description: editor.description.trim() || undefined,
+            status: toPersistedStage(editor.status),
+          }),
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) {
+          setMessage(data.error ?? "Failed to update application.");
+          return;
+        }
+      }
+
+      await reload();
+      setEditor((prev) => ({ ...prev, open: false }));
+      setMessage(editor.mode === "create" ? "Application created." : "Application updated.");
+    } finally {
+      setSavingEditor(false);
+    }
+  };
+
+  const deleteSelected = async () => {
+    if (!selected) return;
+    setDeleting(true);
+    try {
+      const res = await fetch("/api/applications", {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id: selected.id }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setMessage(data.error ?? "Failed to delete application.");
+        return;
+      }
+      setDrawerOpen(false);
+      setSelectedId(null);
+      await reload();
+      setMessage("Application deleted.");
+    } finally {
+      setDeleting(false);
+    }
+  };
+
   const runAction = (type: "autopilot" | "followup" | "copilot") => {
     if (!selected) return;
     if (type === "autopilot") {
@@ -192,6 +332,10 @@ export default function PipelineClient({ applications }: { applications: Pipelin
 
   return (
     <>
+      <div className="form-actions" style={{ marginBottom: 12 }}>
+        <Button variant="primary" onClick={openCreate}>New pipeline card</Button>
+      </div>
+
       <LayoutGroup>
         <div className="pipeline-board" role="region" aria-label="Application pipeline board">
           {stageMeta.map((stage) => (
@@ -217,9 +361,9 @@ export default function PipelineClient({ applications }: { applications: Pipelin
               <motion.div layout className="pipeline-column-body">
                 <AnimatePresence initial={false}>
                   {items
-                    .filter((item) => item.status === stage.key)
+                    .filter((item) => displayStage(item) === stage.key)
                     .map((item) => {
-                      const intent = deriveIntent(item);
+                      const ghostRisk = ghostRiskByDays(item.updatedAt);
                       return (
                         <motion.article
                           layout
@@ -251,10 +395,11 @@ export default function PipelineClient({ applications }: { applications: Pipelin
                           <div className="pipeline-card-role" title={item.job.title}>{item.job.title}</div>
                           <div className="pipeline-card-meta">
                             <span>{daysInStage(item.updatedAt)}</span>
-                            <Tooltip content="AI hiring intent score for this role">
-                              <Badge intent="intent">Intent {intent}%</Badge>
-                            </Tooltip>
+                            <Badge intent="risk">Ghost Risk {ghostRisk}%</Badge>
                           </div>
+                          {displayStage(item) === "GHOSTED" ? (
+                            <div className="kpi-title" style={{ marginTop: 2 }}>Ghosted</div>
+                          ) : null}
                         </motion.article>
                       );
                     })}
@@ -287,9 +432,8 @@ export default function PipelineClient({ applications }: { applications: Pipelin
               <h3>{selected.job.company?.name ?? "Unknown company"}</h3>
               <p>{selected.job.title}</p>
               <div className="pipeline-drawer-badges">
-                <Badge intent="stage">{selected.status}</Badge>
-                <Badge intent="intent">Intent {deriveIntent(selected)}%</Badge>
-                <Badge intent="risk">Ghost Risk {deriveGhostRisk(selected)}%</Badge>
+                <Badge intent="stage">{displayStage(selected)}</Badge>
+                <Badge intent="risk">Ghost Risk {ghostRiskByDays(selected.updatedAt)}%</Badge>
               </div>
             </div>
 
@@ -307,7 +451,7 @@ export default function PipelineClient({ applications }: { applications: Pipelin
                   <p><strong>Location:</strong> {selected.job.description?.toLowerCase().includes("remote") ? "Remote" : "Not specified"}</p>
                   <p><strong>Salary:</strong> {selected.job.description?.match(/\$\d[\d,]*(?:\s*[-to]+\s*\$\d[\d,]*)?/i)?.[0] ?? "Not listed"}</p>
                   <p><strong>Applied date:</strong> {selected.createdAt ? new Date(selected.createdAt).toLocaleDateString() : "Unknown"}</p>
-                  <p><strong>Current stage:</strong> {selected.status}</p>
+                  <p><strong>Current stage:</strong> {displayStage(selected)}</p>
                   <p><strong>Time in stage:</strong> {daysInStage(selected.updatedAt)}</p>
                 </div>
               </Tabs.Content>
@@ -343,11 +487,69 @@ export default function PipelineClient({ applications }: { applications: Pipelin
                   <Button variant="primary" onClick={() => runAction("autopilot")}>Run Autopilot</Button>
                   <Button variant="secondary" onClick={() => runAction("followup")}>Generate follow-up draft</Button>
                   <Button variant="ghost" onClick={() => runAction("copilot")}>Ask Copilot: next step</Button>
+                  <Button variant="secondary" onClick={openEdit}>Edit card</Button>
+                  <button type="button" className="btn btn-danger" onClick={deleteSelected} disabled={deleting}>
+                    {deleting ? "Deleting..." : "Delete card"}
+                  </button>
                 </div>
               </Tabs.Content>
             </Tabs.Root>
           </div>
         )}
+      </Drawer>
+
+      <Drawer
+        open={editor.open}
+        onOpenChange={(open) => setEditor((prev) => ({ ...prev, open }))}
+        title={editor.mode === "create" ? "New Pipeline Card" : "Edit Pipeline Card"}
+      >
+        <div className="form-grid">
+          <input
+            className="input"
+            placeholder="Role title"
+            value={editor.title}
+            onChange={(e) => setEditor((prev) => ({ ...prev, title: e.target.value }))}
+          />
+          <input
+            className="input"
+            placeholder="Company name"
+            value={editor.companyName}
+            onChange={(e) => setEditor((prev) => ({ ...prev, companyName: e.target.value }))}
+          />
+          <input
+            className="input"
+            placeholder="Source (e.g. referral, website)"
+            value={editor.source}
+            onChange={(e) => setEditor((prev) => ({ ...prev, source: e.target.value }))}
+          />
+          <input
+            className="input"
+            placeholder="Job URL (optional)"
+            value={editor.url}
+            onChange={(e) => setEditor((prev) => ({ ...prev, url: e.target.value }))}
+          />
+          <textarea
+            className="input"
+            rows={4}
+            placeholder="Notes/description"
+            value={editor.description}
+            onChange={(e) => setEditor((prev) => ({ ...prev, description: e.target.value }))}
+          />
+          <select
+            className="select"
+            value={editor.status}
+            onChange={(e) => setEditor((prev) => ({ ...prev, status: e.target.value as StageKey }))}
+          >
+            {stageMeta.filter((stage) => stage.key !== "GHOSTED").map((stage) => (
+              <option key={stage.key} value={stage.key}>{stage.label}</option>
+            ))}
+          </select>
+          <div className="form-actions">
+            <Button variant="primary" onClick={saveEditor} disabled={savingEditor}>
+              {savingEditor ? "Saving..." : editor.mode === "create" ? "Create card" : "Save changes"}
+            </Button>
+          </div>
+        </div>
       </Drawer>
     </>
   );

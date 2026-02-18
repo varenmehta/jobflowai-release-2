@@ -2115,6 +2115,10 @@
   --stage-tone: #22c55e;
 }
 
+.stage-ghosted {
+  --stage-tone: #8f9bb1;
+}
+
 .stage-rejected,
 .stage-withdrawn {
   --stage-tone: #ff6b6b;
@@ -2133,6 +2137,7 @@
 .stage-screening .pipeline-card { border-left-color: #8c6eff; }
 .stage-interview .pipeline-card { border-left-color: #ffb347; }
 .stage-offer .pipeline-card { border-left-color: #22c55e; }
+.stage-ghosted .pipeline-card { border-left-color: #8f9bb1; }
 .stage-rejected .pipeline-card,
 .stage-withdrawn .pipeline-card { border-left-color: #ff6b6b; }
 

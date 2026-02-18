@@ -1,65 +1,77 @@
 const steps = [
   {
-    title: "Tell Us Your Goals",
-    copy: "Share your target roles, salary range, and preferred companies.",
+    title: "Intake and Strategy Call",
+    copy: "A human career strategist maps your target roles, compensation band, location constraints, and weekly execution goals.",
   },
   {
-    title: "AI + Human Matching",
-    copy: "We scan thousands of listings while human agents curate best-fit roles.",
+    title: "Research and Job List Building",
+    copy: "Our human operations team builds role shortlists from vetted company pages, referrals, and hiring networks.",
   },
   {
-    title: "We Apply For You",
-    copy: "Tailored applications are submitted with optimized resumes and cover letters.",
+    title: "Manual Application Execution",
+    copy: "Every application is completed by a human specialist with quality checks before submission.",
   },
   {
-    title: "Track & Interview",
-    copy: "Every response flows into your dashboard with interview prep included.",
+    title: "Daily Tracking and Follow-Up",
+    copy: "Our team updates your pipeline, follows up on stale applications, and keeps your dashboard analytics accurate.",
+  },
+  {
+    title: "Interview and Offer Support",
+    copy: "Human coaches run prep sessions, feedback loops, and negotiation support through final offer stage.",
   },
 ];
 
 const plans = [
   {
-    name: "Starter",
-    price: "$49",
+    name: "Launch",
+    price: "$199",
     period: "/month",
-    badge: "",
-    subtitle: "For passive job seekers exploring new opportunities.",
+    badge: "Human Managed",
+    subtitle: "For candidates who need structured execution with strict weekly accountability.",
     features: [
-      "Up to 25 AI-assisted applications/month",
-      "Email sync and auto status detection",
-      "Basic dashboard + pipeline tracking",
-      "Single resume performance tracking",
-      "Standard support (48h)",
+      "1 strategist check-in per week (human)",
+      "40 manually submitted applications/month",
+      "Manual pipeline tracking + stale follow-up",
+      "Weekly analytics report with conversion notes",
+      "Support response in under 24 hours",
     ],
   },
   {
-    name: "Pro",
-    price: "$129",
+    name: "Growth",
+    price: "$499",
     period: "/month",
-    badge: "Most Popular",
-    subtitle: "For active job seekers who want maximum reach and speed.",
+    badge: "Best ROI",
+    subtitle: "For serious job seekers who want full-service human execution.",
     features: [
-      "Unlimited AI-assisted applications",
-      "Multi-resume strategy and version scoring",
-      "Advanced analytics + funnel conversion insights",
-      "Verified job board priority recommendations",
-      "Priority support (24h)",
+      "2 strategist calls per week (human)",
+      "120 manually submitted applications/month",
+      "Dedicated operations associate for tracking",
+      "Manual outreach and recruiter follow-up",
+      "Interview prep and feedback after each round",
     ],
   },
   {
-    name: "Executive",
-    price: "$299",
+    name: "Elite",
+    price: "$1,200",
     period: "/month",
-    badge: "",
-    subtitle: "White-glove service with a dedicated career strategist.",
+    badge: "White Glove",
+    subtitle: "For leadership candidates needing high-touch search management.",
     features: [
-      "Unlimited AI-assisted applications",
-      "Dedicated strategist and weekly review",
-      "Custom outreach and referral workflow",
-      "Mock interview prep + compensation review",
-      "Priority escalation support (same-day)",
+      "Dedicated strategist + dedicated coordinator",
+      "Unlimited managed applications (human-reviewed)",
+      "Referral pipeline and warm intro support",
+      "Compensation and offer negotiation coaching",
+      "Same-day support during active interview loops",
     ],
   },
+];
+
+const businessPlan = [
+  "Primary revenue: monthly subscription plans with strong gross margin through standardized human workflows.",
+  "Secondary revenue: interview coaching add-ons, salary negotiation packages, and executive search acceleration.",
+  "Cost control: centralized operations playbooks, shared QA checklists, and region-based staffing for predictable delivery cost.",
+  "Retention model: dashboard analytics + weekly strategy reviews keep users engaged through the full search lifecycle.",
+  "Target profitability: positive unit economics at >70 active Growth-equivalent subscribers.",
 ];
 
 export default function ServicesPage() {
@@ -67,15 +79,15 @@ export default function ServicesPage() {
     <div>
       <div className="services-hero">
         <h1 className="section-title">
-          We Apply to Jobs <span>For You</span>
+          Human-Led Job Search <span>Operations</span>
         </h1>
         <p className="section-subtitle">
-          A hybrid human + AI service that applies, tracks, and optimizes your job search at scale.
+          JobFlow runs as a complete human service: planning, application execution, tracking, follow-up, and interview support.
         </p>
       </div>
 
-      <h2 className="subsection-title">How It Works</h2>
-      <div className="grid-four">
+      <h2 className="subsection-title">How We Deliver</h2>
+      <div className="grid-three">
         {steps.map((step, index) => (
           <div className="card service-step" key={step.title}>
             <div className="kpi-title">0{index + 1}</div>
@@ -86,15 +98,15 @@ export default function ServicesPage() {
       </div>
 
       <h2 className="subsection-title" style={{ marginTop: "30px", textAlign: "center" }}>
-        Pricing Plans
+        Human Service Plans
       </h2>
       <p className="section-subtitle" style={{ textAlign: "center" }}>
-        Choose the plan that matches your job search intensity.
+        Designed for sustainable profitability and measurable candidate outcomes.
       </p>
 
       <div className="grid-three" style={{ marginTop: "18px" }}>
         {plans.map((plan) => (
-          <div className={`card ${plan.name === "Pro" ? "featured-plan" : ""}`} key={plan.name}>
+          <div className={`card ${plan.name === "Growth" ? "featured-plan" : ""}`} key={plan.name}>
             <div className="plan-head">
               {plan.badge ? <span className="badge">{plan.badge}</span> : <span />}
               <h3>{plan.name}</h3>
@@ -109,11 +121,20 @@ export default function ServicesPage() {
                 <li key={feature}>{feature}</li>
               ))}
             </ul>
-            <button type="button" className={`btn ${plan.name === "Pro" ? "btn-primary" : "btn-secondary"}`}>
-              {plan.name === "Executive" ? "Book consultation" : "Choose plan"}
+            <button type="button" className={`btn ${plan.name === "Growth" ? "btn-primary" : "btn-secondary"}`}>
+              {plan.name === "Elite" ? "Book strategy call" : "Start plan"}
             </button>
           </div>
         ))}
+      </div>
+
+      <div className="card" style={{ marginTop: 24 }}>
+        <h2 className="subsection-title" style={{ marginTop: 0 }}>Business Plan Snapshot</h2>
+        <ul className="plan-list">
+          {businessPlan.map((line) => (
+            <li key={line}>{line}</li>
+          ))}
+        </ul>
       </div>
     </div>
   );

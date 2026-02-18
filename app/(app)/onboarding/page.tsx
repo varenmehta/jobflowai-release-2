@@ -9,6 +9,7 @@ type OnboardingState = {
   email: string;
   dateOfBirth: string;
   primaryResumeId: string;
+  gmailSyncOptIn: boolean;
   onboardingCompleted?: boolean;
 };
 
@@ -38,6 +39,7 @@ export default function OnboardingPage() {
     email: "",
     dateOfBirth: "",
     primaryResumeId: "",
+    gmailSyncOptIn: false,
   });
   const [resumes, setResumes] = useState<Resume[]>([]);
   const [profileScore, setProfileScore] = useState(0);
@@ -58,6 +60,7 @@ export default function OnboardingPage() {
           email: data.onboarding?.email ?? "",
           dateOfBirth: data.onboarding?.dateOfBirth ?? "",
           primaryResumeId: data.onboarding?.primaryResumeId ?? "",
+          gmailSyncOptIn: data.onboarding?.gmailSyncOptIn ?? false,
         }));
         setProfileScore(data.profileScore ?? 0);
         setCompleted(data.completed === true);
@@ -137,6 +140,7 @@ export default function OnboardingPage() {
       email: form.email.trim(),
       dateOfBirth: form.dateOfBirth,
       primaryResumeId: form.primaryResumeId,
+      gmailSyncOptIn: form.gmailSyncOptIn,
       completeSetup: true,
     };
 
@@ -154,7 +158,11 @@ export default function OnboardingPage() {
 
     setProfileScore(data.profileScore ?? 0);
     setCompleted(data.completed === true);
-    setStatus("Setup complete. Opening your dashboard...");
+    setStatus(
+      data.gmailSyncCreated
+        ? `Setup complete. Gmail synced ${data.gmailSyncCreated} messages from the last 30 days.`
+        : "Setup complete. Opening your dashboard...",
+    );
     router.push("/dashboard");
   };
 
@@ -229,6 +237,26 @@ export default function OnboardingPage() {
           ) : (
             <p className="kpi-title">No resume uploaded yet.</p>
           )}
+        </div>
+
+        <div className="card" style={{ marginTop: 16 }}>
+          <h3>Gmail Sync (Optional)</h3>
+          <p className="kpi-title">
+            Enable now to auto-scan the last 30 days of inbox updates for job status detection.
+          </p>
+          <label className="list-row" style={{ marginTop: 10, cursor: "pointer" }}>
+            <span>
+              <input
+                type="checkbox"
+                checked={form.gmailSyncOptIn}
+                onChange={(e) => setForm((prev) => ({ ...prev, gmailSyncOptIn: e.target.checked }))}
+              />{" "}
+              Enable Gmail sync during onboarding
+            </span>
+            <span className="kpi-title">
+              You can decline now and run manual sync later from Dashboard.
+            </span>
+          </label>
         </div>
 
         <div className="form-actions" style={{ marginTop: 14 }}>

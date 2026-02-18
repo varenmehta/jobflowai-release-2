@@ -3,8 +3,13 @@ import { getAuthContext } from "@/lib/auth-context";
 import { prisma } from "@/lib/db";
 import { getGmailClient, STATUS_PATTERNS } from "@/lib/gmail";
 import { ApplicationStatus } from "@prisma/client";
+import { z } from "zod";
 
-export async function POST() {
+const syncBodySchema = z.object({
+  rangeDays: z.number().int().min(1).max(90).default(30).optional(),
+});
+
+export async function POST(request: Request) {
   const { session, user } = await getAuthContext();
   if (!session || !user) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
@@ -27,10 +32,26 @@ export async function POST() {
     },
   });
 
+  const bodyRaw = await request.json().catch(() => ({}));
+  const parsed = syncBodySchema.safeParse(bodyRaw ?? {});
+  const rangeDays = parsed.success ? parsed.data.rangeDays ?? 30 : 30;
+
   try {
     const gmail = getGmailClient(session.accessToken);
-    const list = await gmail.users.messages.list({ userId: "me", maxResults: 20 });
-    const messages = list.data.messages ?? [];
+    const messages: Array<{ id?: string | null }> = [];
+    let nextPageToken: string | undefined;
+    let pages = 0;
+    do {
+      const list = await gmail.users.messages.list({
+        userId: "me",
+        maxResults: 50,
+        pageToken: nextPageToken,
+        q: `newer_than:${rangeDays}d`,
+      });
+      messages.push(...(list.data.messages ?? []));
+      nextPageToken = list.data.nextPageToken ?? undefined;
+      pages += 1;
+    } while (nextPageToken && pages < 3);
 
     let created = 0;
     for (const msg of messages) {
@@ -76,7 +97,7 @@ export async function POST() {
       data: { lastSyncedAt: new Date(), status: "ACTIVE" },
     });
 
-    return NextResponse.json({ status: "ok", created });
+    return NextResponse.json({ status: "ok", created, scanned: messages.length, rangeDays });
   } catch (error: unknown) {
     const message =
       typeof error === "object" && error && "message" in error
