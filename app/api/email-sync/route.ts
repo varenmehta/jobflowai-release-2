@@ -1,9 +1,8 @@
 import { NextResponse } from "next/server";
 import { getAuthContext } from "@/lib/auth-context";
 import { prisma } from "@/lib/db";
-import { getGmailClient, STATUS_PATTERNS } from "@/lib/gmail";
-import { ApplicationStatus } from "@prisma/client";
 import { z } from "zod";
+import { syncGmailEventsToPipeline } from "@/lib/email-sync";
 
 const syncBodySchema = z.object({
   rangeDays: z.number().int().min(1).max(90).default(30).optional(),
@@ -22,82 +21,18 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Missing Gmail access token" }, { status: 400 });
   }
 
-  await prisma.emailSync.upsert({
-    where: { userId_provider: { userId: user.id, provider: "GMAIL" } },
-    update: { status: "ACTIVE" },
-    create: {
-      userId: user.id,
-      provider: "GMAIL",
-      status: "ACTIVE",
-    },
-  });
-
   const bodyRaw = await request.json().catch(() => ({}));
   const parsed = syncBodySchema.safeParse(bodyRaw ?? {});
   const rangeDays = parsed.success ? parsed.data.rangeDays ?? 30 : 30;
 
   try {
-    const gmail = getGmailClient(session.accessToken);
-    const messages: Array<{ id?: string | null }> = [];
-    let nextPageToken: string | undefined;
-    let pages = 0;
-    do {
-      const list = await gmail.users.messages.list({
-        userId: "me",
-        maxResults: 50,
-        pageToken: nextPageToken,
-        q: `newer_than:${rangeDays}d`,
-      });
-      messages.push(...(list.data.messages ?? []));
-      nextPageToken = list.data.nextPageToken ?? undefined;
-      pages += 1;
-    } while (nextPageToken && pages < 3);
-
-    let created = 0;
-    for (const msg of messages) {
-      if (!msg.id) continue;
-      const detail = await gmail.users.messages.get({ userId: "me", id: msg.id, format: "metadata" });
-      const headers = detail.data.payload?.headers ?? [];
-      const subject = headers.find((h) => h.name === "Subject")?.value ?? "";
-      const fromAddress = headers.find((h) => h.name === "From")?.value ?? "";
-      const snippet = detail.data.snippet ?? "";
-      const occurredAt = detail.data.internalDate
-        ? new Date(Number(detail.data.internalDate))
-        : new Date();
-
-      const existing = await prisma.emailEvent.findFirst({
-        where: {
-          userId: user.id,
-          provider: "GMAIL",
-          sourceMessageId: msg.id,
-        },
-        select: { id: true },
-      });
-      if (existing) continue;
-
-      const detected = STATUS_PATTERNS.find((item) => item.pattern.test(subject + snippet));
-
-      await prisma.emailEvent.create({
-        data: {
-          userId: user.id,
-          provider: "GMAIL",
-          subject,
-          fromAddress,
-          snippet,
-          detectedStatus: detected?.status as ApplicationStatus | undefined,
-          sourceMessageId: msg.id,
-          occurredAt,
-        },
-      });
-      created += 1;
-    }
-
-    await prisma.emailSync.updateMany({
-      where: { userId: user.id, provider: "GMAIL" },
-      data: { lastSyncedAt: new Date(), status: "ACTIVE" },
+    const result = await syncGmailEventsToPipeline({
+      userId: user.id,
+      accessToken: session.accessToken,
+      rangeDays,
+      maxPages: 3,
     });
-
-    return NextResponse.json({ status: "ok", created, scanned: messages.length, rangeDays });
+    return NextResponse.json({ status: "ok", ...result });
   } catch (error: unknown) {
     const message =
       typeof error === "object" && error && "message" in error

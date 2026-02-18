@@ -292,27 +292,33 @@ export default function PipelineClient({ applications }: { applications: Pipelin
     }
   };
 
-  const deleteSelected = async () => {
-    if (!selected) return;
+  const deleteApplication = async (id: string) => {
     setDeleting(true);
     try {
       const res = await fetch("/api/applications", {
         method: "DELETE",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ id: selected.id }),
+        body: JSON.stringify({ id }),
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) {
         setMessage(data.error ?? "Failed to delete application.");
         return;
       }
-      setDrawerOpen(false);
-      setSelectedId(null);
+      if (selectedId === id) {
+        setDrawerOpen(false);
+        setSelectedId(null);
+      }
       await reload();
       setMessage("Application deleted.");
     } finally {
       setDeleting(false);
     }
+  };
+
+  const deleteSelected = async () => {
+    if (!selected) return;
+    await deleteApplication(selected.id);
   };
 
   const runAction = (type: "autopilot" | "followup" | "copilot") => {
@@ -389,8 +395,22 @@ export default function PipelineClient({ applications }: { applications: Pipelin
                           whileHover={motionPresets.hoverLift.whileHover}
                           transition={motionPresets.hoverLift.whileHover.transition}
                         >
-                          <div className="pipeline-card-company" title={item.job.company?.name ?? "Unknown company"}>
-                            {item.job.company?.name ?? "Unknown company"}
+                          <div className="pipeline-card-head">
+                            <div className="pipeline-card-company" title={item.job.company?.name ?? "Unknown company"}>
+                              {item.job.company?.name ?? "Unknown company"}
+                            </div>
+                            <button
+                              type="button"
+                              className="pipeline-card-delete"
+                              aria-label="Delete card"
+                              onClick={(event) => {
+                                event.stopPropagation();
+                                void deleteApplication(item.id);
+                              }}
+                              disabled={deleting}
+                            >
+                              ×
+                            </button>
                           </div>
                           <div className="pipeline-card-role" title={item.job.title}>{item.job.title}</div>
                           <div className="pipeline-card-meta">

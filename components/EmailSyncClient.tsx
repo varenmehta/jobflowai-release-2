@@ -36,7 +36,11 @@ export default function EmailSyncClient() {
     setMessage("Syncing...");
     const res = await fetch("/api/email-sync", { method: "POST" });
     const data = await res.json();
-    setMessage(res.ok ? `Synced ${data.created ?? 0} emails.` : data.error ?? "Failed");
+    setMessage(
+      res.ok
+        ? `Synced ${data.created ?? 0} emails. Updated ${data.pipelineUpdates ?? 0} pipeline cards.`
+        : data.error ?? "Failed",
+    );
     await load();
   };
 
