@@ -42,7 +42,7 @@ export default function EmailSyncClient() {
     const data = await res.json();
     setMessage(
       res.ok
-        ? `Synced ${data.created ?? 0} emails. Updated ${data.pipelineUpdates ?? 0} stages, refreshed ${data.activityTouches ?? 0} cards.`
+        ? `Synced ${data.created ?? 0} emails. Detected ${data.detectedEvents ?? 0}, matched ${data.matchedEvents ?? 0}, updated ${data.pipelineUpdates ?? 0} stages, refreshed ${data.activityTouches ?? 0} cards.`
         : data.error ?? "Failed",
     );
     await load();

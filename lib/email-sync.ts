@@ -136,21 +136,24 @@ function pickApplication(applications: CandidateApplication[], subject: string, 
     }
   }
 
-  if (bestScore < 2) return null;
+  if (bestScore < 1) return null;
   return best;
 }
 
 function nextStatus(current: ApplicationStatus, detected: ApplicationStatus) {
-  if (current === "REJECTED" || current === "WITHDRAWN") return null;
-  if (detected === "APPLIED") return null;
+  if (current === "REJECTED") return null;
+  if (detected === "APPLIED") {
+    if (current === "WITHDRAWN") return "APPLIED";
+    return null;
+  }
   if (detected === "REJECTED") return "REJECTED";
   if (detected === "OFFER") return current === "OFFER" ? null : "OFFER";
   if (detected === "INTERVIEW") {
-    if (current === "APPLIED" || current === "SCREENING") return "INTERVIEW";
+    if (current === "APPLIED" || current === "SCREENING" || current === "WITHDRAWN") return "INTERVIEW";
     return null;
   }
   if (detected === "SCREENING") {
-    if (current === "APPLIED") return "SCREENING";
+    if (current === "APPLIED" || current === "WITHDRAWN") return "SCREENING";
     return null;
   }
   return null;
@@ -245,11 +248,19 @@ export async function syncGmailEventsToPipeline(input: SyncInput) {
         });
         matched.status = next;
         pipelineUpdates += 1;
-      } else if (detected.status === "APPLIED" && matched.status === "APPLIED") {
+      } else if (
+        detected.status === "APPLIED" &&
+        (matched.status === "APPLIED" || matched.status === "WITHDRAWN")
+      ) {
+        const refreshedStatus = matched.status === "WITHDRAWN" ? "APPLIED" : matched.status;
         await prisma.application.update({
           where: { id: matched.id },
-          data: { lastActivityAt: occurredAt },
+          data: {
+            status: refreshedStatus,
+            lastActivityAt: occurredAt,
+          },
         });
+        matched.status = refreshedStatus;
         matched.lastActivityAt = occurredAt;
         activityTouches += 1;
       }
@@ -288,13 +299,18 @@ export async function syncGmailEventsToPipeline(input: SyncInput) {
     if (!next) {
       if (
         detectedFromHistory === "APPLIED" &&
-        matched.status === "APPLIED" &&
+        (matched.status === "APPLIED" || matched.status === "WITHDRAWN") &&
         event.occurredAt.getTime() > matched.lastActivityAt.getTime()
       ) {
+        const refreshedStatus = matched.status === "WITHDRAWN" ? "APPLIED" : matched.status;
         await prisma.application.update({
           where: { id: matched.id },
-          data: { lastActivityAt: event.occurredAt },
+          data: {
+            status: refreshedStatus,
+            lastActivityAt: event.occurredAt,
+          },
         });
+        matched.status = refreshedStatus;
         matched.lastActivityAt = event.occurredAt;
         activityTouches += 1;
       }
