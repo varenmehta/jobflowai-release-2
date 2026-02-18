@@ -247,7 +247,7 @@ export async function syncGmailEventsToPipeline(input: SyncInput) {
     });
     if (existing) continue;
 
-    const detail = await gmail.users.messages.get({ userId: "me", id: msg.id, format: "metadata" });
+    const detail = await gmail.users.messages.get({ userId: "me", id: msg.id, format: "full" });
     const headers = detail.data.payload?.headers ?? [];
     const subject = headers.find((h) => h.name === "Subject")?.value ?? "";
     const fromAddress = headers.find((h) => h.name === "From")?.value ?? "";
@@ -312,7 +312,7 @@ export async function syncGmailEventsToPipeline(input: SyncInput) {
     where: {
       userId: input.userId,
       provider: "GMAIL",
-      occurredAt: { gte: new Date(Date.now() - rangeDays * 24 * 60 * 60 * 1000) },
+      ...(fullInbox ? {} : { occurredAt: { gte: new Date(Date.now() - rangeDays * 24 * 60 * 60 * 1000) } }),
     },
     orderBy: { occurredAt: "desc" },
     take: 300,
@@ -330,7 +330,7 @@ export async function syncGmailEventsToPipeline(input: SyncInput) {
     let historicalText = `${event.subject} ${event.snippet ?? ""}`;
     if (event.sourceMessageId) {
       try {
-        const detail = await gmail.users.messages.get({ userId: "me", id: event.sourceMessageId, format: "metadata" });
+        const detail = await gmail.users.messages.get({ userId: "me", id: event.sourceMessageId, format: "full" });
         historicalText = `${historicalText} ${extractPayloadText(detail.data.payload as any)}`.trim();
       } catch {
         // Keep fallback to existing stored text if message fetch fails.
@@ -399,5 +399,7 @@ export async function syncGmailEventsToPipeline(input: SyncInput) {
     activityTouches,
     detectedEvents,
     matchedEvents,
+    applicationsCount: applications.length,
+    historicalEventsCount: historicalEvents.length,
   };
 }
