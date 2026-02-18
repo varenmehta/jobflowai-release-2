@@ -29,12 +29,22 @@ function tokens(text: string) {
     .filter((part) => part.length >= 3);
 }
 
+function extractEmailDomainLabel(fromAddress: string) {
+  const match = fromAddress.toLowerCase().match(/@([a-z0-9.-]+\.[a-z]{2,})/);
+  if (!match) return "";
+  const domain = match[1];
+  const label = domain.split(".")[0] ?? "";
+  if (["gmail", "googlemail", "yahoo", "hotmail", "outlook", "live"].includes(label)) return "";
+  return label;
+}
+
 function scoreApplicationMatch(application: CandidateApplication, combinedText: string, fromAddress: string) {
   const companyName = application.job.company?.name ?? "";
   const companyNorm = normalize(companyName);
   const titleNorm = normalize(application.job.title);
   const text = normalize(combinedText);
   const from = fromAddress.toLowerCase();
+  const domainLabel = extractEmailDomainLabel(fromAddress);
   let score = 0;
 
   if (companyNorm && text.includes(companyNorm)) score += 7;
@@ -51,6 +61,14 @@ function scoreApplicationMatch(application: CandidateApplication, combinedText: 
 
   if (companyTokens.length && companyTokens.some((token) => from.includes(token))) {
     score += 2;
+  }
+
+  if (domainLabel) {
+    if (companyNorm.includes(domainLabel) || domainLabel.includes(companyTokens[0] ?? "")) {
+      score += 4;
+    } else if (companyTokens.some((token) => domainLabel.includes(token) || token.includes(domainLabel))) {
+      score += 2;
+    }
   }
 
   return score;
@@ -71,7 +89,7 @@ function pickApplication(applications: CandidateApplication[], subject: string, 
     }
   }
 
-  if (bestScore < 4) return null;
+  if (bestScore < 2) return null;
   return best;
 }
 
@@ -124,6 +142,8 @@ export async function syncGmailEventsToPipeline(input: SyncInput) {
 
   let created = 0;
   let pipelineUpdates = 0;
+  let detectedEvents = 0;
+  let matchedEvents = 0;
 
   for (const msg of messages) {
     if (!msg.id) continue;
@@ -145,6 +165,7 @@ export async function syncGmailEventsToPipeline(input: SyncInput) {
     const occurredAt = detail.data.internalDate ? new Date(Number(detail.data.internalDate)) : new Date();
     const detected = STATUS_PATTERNS.find((item) => item.pattern.test(`${subject} ${snippet}`));
     const matched = pickApplication(applications, subject, snippet, fromAddress);
+    if (detected?.status) detectedEvents += 1;
 
     await prisma.emailEvent.create({
       data: {
@@ -163,6 +184,7 @@ export async function syncGmailEventsToPipeline(input: SyncInput) {
     created += 1;
 
     if (matched && detected?.status) {
+      matchedEvents += 1;
       const next = nextStatus(matched.status, detected.status);
       if (next) {
         await prisma.application.update({
@@ -201,6 +223,7 @@ export async function syncGmailEventsToPipeline(input: SyncInput) {
   for (const event of historicalEvents) {
     const matched = pickApplication(applications, event.subject, event.snippet ?? "", event.fromAddress ?? "");
     if (!matched || !event.detectedStatus) continue;
+    matchedEvents += 1;
     const next = nextStatus(matched.status, event.detectedStatus);
     if (!next) continue;
 
@@ -230,5 +253,5 @@ export async function syncGmailEventsToPipeline(input: SyncInput) {
     });
   }
 
-  return { created, scanned: messages.length, rangeDays, pipelineUpdates };
+  return { created, scanned: messages.length, rangeDays, pipelineUpdates, detectedEvents, matchedEvents };
 }
