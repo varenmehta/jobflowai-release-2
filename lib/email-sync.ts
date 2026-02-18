@@ -178,6 +178,43 @@ export async function syncGmailEventsToPipeline(input: SyncInput) {
     }
   }
 
+  // Backfill pass: older synced emails (created before pipeline-mapping logic) can still drive status updates.
+  // This keeps existing tracked inbox history useful without requiring brand-new emails.
+  const historicalEvents = await prisma.emailEvent.findMany({
+    where: {
+      userId: input.userId,
+      provider: "GMAIL",
+      detectedStatus: { not: null },
+      occurredAt: { gte: new Date(Date.now() - rangeDays * 24 * 60 * 60 * 1000) },
+    },
+    orderBy: { occurredAt: "desc" },
+    take: 300,
+    select: {
+      subject: true,
+      snippet: true,
+      fromAddress: true,
+      detectedStatus: true,
+      occurredAt: true,
+    },
+  });
+
+  for (const event of historicalEvents) {
+    const matched = pickApplication(applications, event.subject, event.snippet ?? "", event.fromAddress ?? "");
+    if (!matched || !event.detectedStatus) continue;
+    const next = nextStatus(matched.status, event.detectedStatus);
+    if (!next) continue;
+
+    await prisma.application.update({
+      where: { id: matched.id },
+      data: {
+        status: next,
+        lastActivityAt: event.occurredAt,
+      },
+    });
+    matched.status = next;
+    pipelineUpdates += 1;
+  }
+
   await prisma.emailSync.updateMany({
     where: { userId: input.userId, provider: "GMAIL" },
     data: { lastSyncedAt: new Date(), status: "ACTIVE" },
