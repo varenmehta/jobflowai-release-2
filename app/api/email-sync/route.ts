@@ -6,6 +6,7 @@ import { syncGmailEventsToPipeline } from "@/lib/email-sync";
 
 const syncBodySchema = z.object({
   rangeDays: z.number().int().min(1).max(90).default(30).optional(),
+  fullInbox: z.boolean().optional(),
 });
 
 export async function POST(request: Request) {
@@ -24,6 +25,7 @@ export async function POST(request: Request) {
   const bodyRaw = await request.json().catch(() => ({}));
   const parsed = syncBodySchema.safeParse(bodyRaw ?? {});
   const rangeDays = parsed.success ? parsed.data.rangeDays ?? 30 : 30;
+  const fullInbox = parsed.success ? parsed.data.fullInbox ?? true : true;
 
   try {
     const result = await syncGmailEventsToPipeline({
@@ -31,6 +33,7 @@ export async function POST(request: Request) {
       accessToken: session.accessToken,
       rangeDays,
       maxPages: 3,
+      fullInbox,
     });
     return NextResponse.json({ status: "ok", ...result });
   } catch (error: unknown) {

@@ -8,11 +8,13 @@ type SyncInput = {
   accessToken: string;
   rangeDays?: number;
   maxPages?: number;
+  fullInbox?: boolean;
 };
 
 type CandidateApplication = {
   id: string;
   status: ApplicationStatus;
+  lastActivityAt: Date;
   job: {
     title: string;
     company: { name: string } | null;
@@ -157,6 +159,7 @@ function nextStatus(current: ApplicationStatus, detected: ApplicationStatus) {
 export async function syncGmailEventsToPipeline(input: SyncInput) {
   const rangeDays = input.rangeDays ?? 30;
   const maxPages = input.maxPages ?? 3;
+  const fullInbox = input.fullInbox === true;
   const gmail = getGmailClient(input.accessToken);
 
   const applications = await prisma.application.findMany({
@@ -172,7 +175,7 @@ export async function syncGmailEventsToPipeline(input: SyncInput) {
       userId: "me",
       maxResults: 50,
       pageToken: nextPageToken,
-      q: `newer_than:${rangeDays}d`,
+      q: fullInbox ? "in:inbox" : `newer_than:${rangeDays}d`,
     });
     messages.push(...(list.data.messages ?? []));
     nextPageToken = list.data.nextPageToken ?? undefined;
@@ -187,6 +190,7 @@ export async function syncGmailEventsToPipeline(input: SyncInput) {
 
   let created = 0;
   let pipelineUpdates = 0;
+  let activityTouches = 0;
   let detectedEvents = 0;
   let matchedEvents = 0;
 
@@ -241,6 +245,13 @@ export async function syncGmailEventsToPipeline(input: SyncInput) {
         });
         matched.status = next;
         pipelineUpdates += 1;
+      } else if (detected.status === "APPLIED" && matched.status === "APPLIED") {
+        await prisma.application.update({
+          where: { id: matched.id },
+          data: { lastActivityAt: occurredAt },
+        });
+        matched.lastActivityAt = occurredAt;
+        activityTouches += 1;
       }
     }
   }
@@ -270,7 +281,21 @@ export async function syncGmailEventsToPipeline(input: SyncInput) {
     if (!matched || !event.detectedStatus) continue;
     matchedEvents += 1;
     const next = nextStatus(matched.status, event.detectedStatus);
-    if (!next) continue;
+    if (!next) {
+      if (
+        event.detectedStatus === "APPLIED" &&
+        matched.status === "APPLIED" &&
+        event.occurredAt.getTime() > matched.lastActivityAt.getTime()
+      ) {
+        await prisma.application.update({
+          where: { id: matched.id },
+          data: { lastActivityAt: event.occurredAt },
+        });
+        matched.lastActivityAt = event.occurredAt;
+        activityTouches += 1;
+      }
+      continue;
+    }
 
     await prisma.application.update({
       where: { id: matched.id },
@@ -298,5 +323,13 @@ export async function syncGmailEventsToPipeline(input: SyncInput) {
     });
   }
 
-  return { created, scanned: messages.length, rangeDays, pipelineUpdates, detectedEvents, matchedEvents };
+  return {
+    created,
+    scanned: messages.length,
+    rangeDays,
+    pipelineUpdates,
+    activityTouches,
+    detectedEvents,
+    matchedEvents,
+  };
 }
