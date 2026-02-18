@@ -25,6 +25,44 @@ function normalize(text: string) {
   return text.toLowerCase().replace(/[^a-z0-9\s]/g, " ").replace(/\s+/g, " ").trim();
 }
 
+function decodeBase64Url(input: string) {
+  const normalized = input.replace(/-/g, "+").replace(/_/g, "/");
+  const padded = normalized.padEnd(Math.ceil(normalized.length / 4) * 4, "=");
+  return Buffer.from(padded, "base64").toString("utf8");
+}
+
+function extractPayloadText(payload?: {
+  body?: { data?: string | null };
+  parts?: Array<{
+    mimeType?: string | null;
+    body?: { data?: string | null };
+    parts?: Array<{
+      mimeType?: string | null;
+      body?: { data?: string | null };
+      parts?: unknown;
+    }> | null;
+  }> | null;
+}): string {
+  if (!payload) return "";
+  const chunks: string[] = [];
+
+  const walk = (node: { mimeType?: string | null; body?: { data?: string | null }; parts?: any[] | null }) => {
+    const mime = (node.mimeType ?? "").toLowerCase();
+    const data = node.body?.data;
+    if (data && (!mime || mime.startsWith("text/plain") || mime.startsWith("text/html"))) {
+      try {
+        chunks.push(decodeBase64Url(data));
+      } catch {
+        // Ignore decode failures and keep parsing remaining parts.
+      }
+    }
+    for (const part of node.parts ?? []) walk(part);
+  };
+
+  walk(payload);
+  return chunks.join(" ");
+}
+
 function tokens(text: string) {
   return normalize(text)
     .split(" ")
@@ -214,9 +252,10 @@ export async function syncGmailEventsToPipeline(input: SyncInput) {
     const subject = headers.find((h) => h.name === "Subject")?.value ?? "";
     const fromAddress = headers.find((h) => h.name === "From")?.value ?? "";
     const snippet = detail.data.snippet ?? "";
+    const fullText = extractPayloadText(detail.data.payload as any);
     const occurredAt = detail.data.internalDate ? new Date(Number(detail.data.internalDate)) : new Date();
-    const detected = STATUS_PATTERNS.find((item) => item.pattern.test(`${subject} ${snippet}`));
-    const matched = pickApplication(applications, subject, snippet, fromAddress);
+    const detected = STATUS_PATTERNS.find((item) => item.pattern.test(`${subject} ${snippet} ${fullText}`));
+    const matched = pickApplication(applications, `${subject} ${fullText}`, snippet, fromAddress);
     if (detected?.status) detectedEvents += 1;
 
     await prisma.emailEvent.create({
@@ -282,18 +321,27 @@ export async function syncGmailEventsToPipeline(input: SyncInput) {
       snippet: true,
       fromAddress: true,
       detectedStatus: true,
+      sourceMessageId: true,
       occurredAt: true,
     },
   });
 
   for (const event of historicalEvents) {
-    const matched = pickApplication(applications, event.subject, event.snippet ?? "", event.fromAddress ?? "");
-    const detectedFromHistory =
-      event.detectedStatus ??
-      STATUS_PATTERNS.find((item) => item.pattern.test(`${event.subject} ${event.snippet ?? ""}`))?.status ??
-      null;
+    let historicalText = `${event.subject} ${event.snippet ?? ""}`;
+    if (event.sourceMessageId) {
+      try {
+        const detail = await gmail.users.messages.get({ userId: "me", id: event.sourceMessageId, format: "metadata" });
+        historicalText = `${historicalText} ${extractPayloadText(detail.data.payload as any)}`.trim();
+      } catch {
+        // Keep fallback to existing stored text if message fetch fails.
+      }
+    }
+
+    const matched = pickApplication(applications, historicalText, event.snippet ?? "", event.fromAddress ?? "");
+    const detectedFromHistory = event.detectedStatus ?? STATUS_PATTERNS.find((item) => item.pattern.test(historicalText))?.status ?? null;
 
     if (!matched || !detectedFromHistory) continue;
+    detectedEvents += 1;
     matchedEvents += 1;
     const next = nextStatus(matched.status, detectedFromHistory);
     if (!next) {
