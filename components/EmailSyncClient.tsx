@@ -50,7 +50,11 @@ export default function EmailSyncClient() {
 
   const desync = async () => {
     setMessage("Clearing synced Gmail data...");
-    const res = await fetch("/api/email-sync", { method: "DELETE" });
+    const res = await fetch("/api/email-sync", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action: "desync" }),
+    });
     const data = await res.json().catch(() => ({}));
     setMessage(res.ok ? `Desynced. Removed ${data.deletedEvents ?? 0} tracked emails.` : data.error ?? "Failed");
     await load();

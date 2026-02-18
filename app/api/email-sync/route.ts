@@ -7,6 +7,7 @@ import { syncGmailEventsToPipeline } from "@/lib/email-sync";
 const syncBodySchema = z.object({
   rangeDays: z.number().int().min(1).max(90).default(30).optional(),
   fullInbox: z.boolean().optional(),
+  action: z.enum(["sync", "desync"]).optional(),
 });
 
 export async function POST(request: Request) {
@@ -24,8 +25,29 @@ export async function POST(request: Request) {
 
   const bodyRaw = await request.json().catch(() => ({}));
   const parsed = syncBodySchema.safeParse(bodyRaw ?? {});
+  const action = parsed.success ? parsed.data.action ?? "sync" : "sync";
   const rangeDays = parsed.success ? parsed.data.rangeDays ?? 30 : 30;
   const fullInbox = parsed.success ? parsed.data.fullInbox ?? true : true;
+
+  if (action === "desync") {
+    const result = await prisma.$transaction(async (tx) => {
+      const deletedEvents = await tx.emailEvent.deleteMany({
+        where: { userId: user.id, provider: "GMAIL" },
+      });
+
+      await tx.emailSync.deleteMany({
+        where: { userId: user.id, provider: "GMAIL" },
+      });
+
+      return { deletedEvents: deletedEvents.count };
+    });
+
+    return NextResponse.json({
+      status: "ok",
+      message: "Gmail sync data cleared. Run sync again to rebuild from inbox.",
+      deletedEvents: result.deletedEvents,
+    });
+  }
 
   try {
     const result = await syncGmailEventsToPipeline({
@@ -78,5 +100,33 @@ export async function GET() {
   return NextResponse.json({
     sync,
     count,
+  });
+}
+
+export async function DELETE() {
+  const { user } = await getAuthContext();
+  if (!user) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+  if (user.status !== "ACTIVE") {
+    return NextResponse.json({ error: "Account suspended" }, { status: 403 });
+  }
+
+  const result = await prisma.$transaction(async (tx) => {
+    const deletedEvents = await tx.emailEvent.deleteMany({
+      where: { userId: user.id, provider: "GMAIL" },
+    });
+
+    await tx.emailSync.deleteMany({
+      where: { userId: user.id, provider: "GMAIL" },
+    });
+
+    return { deletedEvents: deletedEvents.count };
+  });
+
+  return NextResponse.json({
+    status: "ok",
+    message: "Gmail sync data cleared. Run sync again to rebuild from inbox.",
+    deletedEvents: result.deletedEvents,
   });
 }
